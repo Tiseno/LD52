@@ -54,7 +54,18 @@ local BLUE = {0, 0, 1}
 CyclicTime = 0
 Time = 0
 
+local DEFAULT_MAX_STALK_BEND = 0.05
+local DEFAULT_STALK_BEND_SPEED = 1
+local max_stalk_bend = DEFAULT_MAX_STALK_BEND
+local stalk_bend_speed = DEFAULT_STALK_BEND_SPEED
+
+local World = {}
+local Objects = {}
+local BackgroundProps = {}
+local Props = {}
+
 function love.keypressed(key, scancode, isrepeat)
+    print("keypress", key)
     --print(key)
     --print(scancode)
     --print(isrepeat)
@@ -65,6 +76,20 @@ function love.keypressed(key, scancode, isrepeat)
         elseif STATE == GAME_PAUSED then
             STATE = GAME_RUNNING
         end
+    end
+
+    if key == "0" then
+        Objects.bird.state.dead = true
+    end
+
+    if key == "9" then
+        max_stalk_bend = max_stalk_bend * 1.1
+        stalk_bend_speed = stalk_bend_speed * 1.1
+    end
+
+    if key == "0" then
+        max_stalk_bend = DEFAULT_MAX_STALK_BEND
+        stalk_bend_speed = DEFAULT_STALK_BEND_SPEED
     end
 
     if key == "unknown" then
@@ -112,7 +137,7 @@ end
 local function updateWheat(wheat)
     local s = wheat.skeleton
     while true do
-        s.angle = 0.05 * math.sin(wheat.seed + CyclicTime)
+        s.angle = max_stalk_bend * math.sin(wheat.seed + CyclicTime * stalk_bend_speed)
         if #s.children > 1 then
             break
         end
@@ -150,12 +175,6 @@ local function newWheat(x, y, baseColor, mutation)
     return updateWheat(wheat)
 end
 
-local World = {}
-local Objects = {}
-local BackgroundProps = {}
-local Props = {}
-local bird = {facing_left = true, is_flapping = false}
-
 local function addDarkWheat(list)
     local n = 380
     local spacing = 5
@@ -178,6 +197,7 @@ end
 -- https://love2d.org/wiki/Tutorial:Physics
 local function initGameWorld()
     World = love.physics.newWorld(0, 981, true)
+
     local window_width = love.graphics.getWidth()
     local window_height = love.graphics.getHeight()
 
@@ -186,21 +206,40 @@ local function initGameWorld()
     Objects.ground.body = love.physics.newBody(World, ground_width / 2, 20)
     Objects.ground.shape = love.physics.newRectangleShape(ground_width, 40)
     Objects.ground.fixture = love.physics.newFixture(Objects.ground.body, Objects.ground.shape)
-    Objects.ground.fixture:setFriction(0.9)
+    Objects.ground.fixture:setFriction(1)
 
     local bird_size = 10
     Objects.bird = {}
     Objects.bird.body = love.physics.newBody(World, window_width / 2, -window_height / 2, "dynamic")
-    Objects.bird.shape = love.physics.newRectangleShape(bird_size, bird_size)
+    Objects.bird.shape = love.physics.newCircleShape(bird_size)
     Objects.bird.fixture = love.physics.newFixture(Objects.bird.body, Objects.bird.shape)
-    Objects.bird.fixture:setFriction(0.9)
-    Objects.bird.state = {facing_left = true, is_flapping = false}
+    Objects.bird.fixture:setFriction(1)
+    Objects.bird.body:setMassData(0, 0, 0.031415928155184, 1000000000000000)
+    Objects.bird.state = {facing_left = true, flapping = false, on_ground = false, dead = false}
+
+    local function birdBeginsContactWithGround(a, b, coll)
+        if b == Objects.bird.fixture then
+            print("Bird on ground!")
+            Objects.bird.state.on_ground = true
+        end
+    end
+
+    local function birdEndsContactWithGround(a, b, coll)
+        if b == Objects.bird.fixture then
+            print("Bird takes off from ground!")
+            Objects.bird.state.on_ground = false
+        end
+    end
+
+    World:setCallbacks(birdBeginsContactWithGround, birdEndsContactWithGround)
 
     addDarkWheat(BackgroundProps)
     addWheat(Props)
 end
 
 local function destroyWorld()
+    max_stalk_bend = DEFAULT_MAX_STALK_BEND
+    stalk_bend_speed = DEFAULT_STALK_BEND_SPEED
     World = {}
     Objects = {}
     BackgroundProps = {}
@@ -210,6 +249,7 @@ end
 local MainMenuProps = {}
 
 function love.load()
+    addDarkWheat(MainMenuProps)
     addWheat(MainMenuProps)
 
     FontSmall = love.graphics.newFont(24)
@@ -300,28 +340,59 @@ local function game_update(dt)
         Objects.ground.body:setX(Objects.ground.body:getX() + dt * 100)
     end
 
+    local xv, yv = Objects.bird.body:getLinearVelocity()
     if love.keyboard.isDown("up") or love.keyboard.isDown("k") then
-        bird.is_flapping = true
-        local xv, yv = Objects.bird.body:getLinearVelocity()
+        Objects.bird.state.flapping = true
         if love.keyboard.isDown("lshift") then
             if yv > -300 then
                 Objects.bird.body:applyForce(0, -90)
             end
-        elseif yv > -10 then
+        elseif love.keyboard.isDown("lctrl") then
+            if yv > 200 then
+                Objects.bird.body:applyForce(0, -90)
+            end
+        elseif Objects.bird.state.on_ground then
+            -- do nothing, we be perching
+        elseif yv > 0 then
             Objects.bird.body:applyForce(0, -90)
         end
     else
-        bird.is_flapping = false
+        Objects.bird.state.flapping = false
     end
 
     if love.keyboard.isDown("left") or love.keyboard.isDown("h") then
-        Objects.bird.body:applyForce(-10, 0)
-        bird.facing_left = true
+        if Objects.bird.state.flapping and xv > -300 then
+            Objects.bird.body:applyForce(-35, 0)
+        end
+        Objects.bird.state.facing_left = true
+    else
+        if Objects.bird.state.flapping and xv > 10 then
+            Objects.bird.body:applyForce(-10, 0)
+        end
     end
 
     if love.keyboard.isDown("right") or love.keyboard.isDown("l") then
-        Objects.bird.body:applyForce(10, 0)
-        bird.facing_left = false
+        if Objects.bird.state.flapping and xv < 300 then
+            Objects.bird.body:applyForce(35, 0)
+        end
+        Objects.bird.state.facing_left = false
+    else
+        if Objects.bird.state.flapping and xv < -10 then
+            Objects.bird.body:applyForce(10, 0)
+        end
+    end
+
+    if Objects.bird.state.on_ground and love.keyboard.isDown("space") then
+        if Objects.bird.state.flapping then
+            Objects.bird.body:applyLinearImpulse(0, -12)
+        elseif Objects.bird.state.facing_left then
+            Objects.bird.body:applyLinearImpulse(-2, -8)
+        else
+            Objects.bird.body:applyLinearImpulse(2, -8)
+        end
+        Objects.bird.state.on_ground = false
+
+        print("Applies jump impulse")
     end
 
     for _, prop in ipairs(BackgroundProps) do
@@ -441,8 +512,17 @@ local function drawBird(bird, x, y)
     love.graphics.setColor(unpack(ORANGE))
     love.graphics.rectangle("fill", 4, 0, 9, 5)
 
-    love.graphics.setColor(unpack(BLACK))
-    love.graphics.rectangle("fill", 1, -4, 3, 3)
+    if bird.dead then
+        love.graphics.setColor(unpack(RED))
+        love.graphics.rectangle("fill", 3, -6, 3, 3)
+        love.graphics.rectangle("fill", -1, -2, 3, 3)
+        love.graphics.rectangle("fill", 1, -4, 3, 3)
+        love.graphics.rectangle("fill", 3, -2, 3, 3)
+        love.graphics.rectangle("fill", -1, -6, 3, 3)
+    else
+        love.graphics.setColor(unpack(BLACK))
+        love.graphics.rectangle("fill", 1, -4, 3, 3)
+    end
 
     love.graphics.setColor(unpack(DARK_GRAY))
     love.graphics.rectangle("fill", -4, 9, 3, 3)
@@ -451,7 +531,7 @@ local function drawBird(bird, x, y)
     local flipper = math.sin(Time * 100)
 
     love.graphics.setColor(unpack(highlight_color(LIGHT_BLUE)))
-    if bird.is_flapping and flipper > 0 then
+    if bird.flapping and flipper > 0 then
         love.graphics.rectangle("fill", -8, 5, 8, 8)
     else
         love.graphics.rectangle("fill", -8, 0, 8, 8)
@@ -494,7 +574,7 @@ local function drawObjects()
     love.graphics.setColor(unpack(BROWN_GRAY))
     love.graphics.polygon("fill", Objects.ground.body:getWorldPoints(Objects.ground.shape:getPoints()))
 
-    drawBird --[[ Objects.bird.state ]](bird, Objects.bird.body:getWorldPoints(Objects.bird.shape:getPoints()))
+    drawBird(Objects.bird.state, Objects.bird.body:getPosition())
 
     love.graphics.pop()
 end
