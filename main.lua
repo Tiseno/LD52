@@ -6,7 +6,7 @@ local GAME_RUNNING = "GAME_RUNNING"
 local GAME_PAUSED = "GAME_PAUSED"
 local GAME_OVER = "GAME_OVER"
 
-local STATE = MAIN_MENU
+local STATE = GAME_INIT
 
 --https://colorpicker.me
 local function rgb(r, g, b)
@@ -33,9 +33,12 @@ end
 local WHEAT_COLOR = rgb(179, 136, 7)
 
 local LIGHT_BLUE = {0.5, 0.7, 0.9}
+local ORANGE = rgb(255, 128, 61)
 local BROWN_GRAY = rgb(78, 79, 49)
 
 local WHITE = {1, 1, 1}
+local BLACK = {0, 0, 0}
+local DARK_GRAY = {0.2, 0.2, 0.2}
 local RED = {1, 0, 0}
 local GREEN = {0, 1, 0}
 local BLUE = {0, 0, 1}
@@ -118,8 +121,11 @@ local function newWheat(x, y)
     for i = 0, 7, 1 do
         local offset1 = lr and 3 or 1
         local offset2 = lr and 1 or 3
-        table.insert(seeds, newBone(0, i * 6 - offset1, 3, 10, 0.4, mutate_color(color, 0.1), {}))
-        table.insert(seeds, newBone(0, i * 6 - offset2, 3, 10, -0.4, mutate_color(color, 0.1), {}))
+        table.insert(seeds, newBone(0, i * 6 - offset1, 3, 10, 0.3 + math.random() * 0.2, mutate_color(color, 0.1), {}))
+        table.insert(
+            seeds,
+            newBone(0, i * 6 - offset2, 3, 10, -0.3 - math.random() * 0.2, mutate_color(color, 0.1), {})
+        )
     end
     table.insert(seeds, newBone(0, 7 * 6 + 3, 3, 10, 0, mutate_color(color, 0.1), {}))
 
@@ -137,6 +143,7 @@ end
 local World = {}
 local Objects = {}
 local Props = {}
+local bird = {facing_left = true, is_flapping = false}
 
 local function addWheat(list)
     local n = 380
@@ -247,7 +254,10 @@ local function game_update(dt)
     World:update(dt)
 
     if love.keyboard.isDown("up") then
+        bird.is_flapping = true
         Objects.ground.body:setY(Objects.ground.body:getY() - dt * 100)
+    else
+        bird.is_flapping = false
     end
 
     if love.keyboard.isDown("down") then
@@ -255,10 +265,12 @@ local function game_update(dt)
     end
 
     if love.keyboard.isDown("left") then
+        bird.facing_left = true
         Objects.ground.body:setX(Objects.ground.body:getX() - dt * 100)
     end
 
     if love.keyboard.isDown("right") then
+        bird.facing_left = false
         Objects.ground.body:setX(Objects.ground.body:getX() + dt * 100)
     end
 
@@ -359,6 +371,41 @@ local function drawBone(bone)
     love.graphics.pop()
 end
 
+local function drawBird(x, y, bird)
+    love.graphics.push()
+    love.graphics.translate(x, y)
+    if bird.facing_left then
+        love.graphics.scale(-1, 1)
+    end
+
+    love.graphics.setColor(unpack(LIGHT_BLUE))
+    love.graphics.rectangle("fill", -10, -10, 20, 20)
+
+    love.graphics.setColor(unpack(LIGHT_BLUE))
+    love.graphics.rectangle("fill", -15, 0, 9, 8)
+
+    love.graphics.setColor(unpack(ORANGE))
+    love.graphics.rectangle("fill", 4, 0, 9, 5)
+
+    love.graphics.setColor(unpack(BLACK))
+    love.graphics.rectangle("fill", 1, -4, 3, 3)
+
+    love.graphics.setColor(unpack(DARK_GRAY))
+    love.graphics.rectangle("fill", -4, 9, 3, 3)
+    love.graphics.rectangle("fill", 0, 9, 3, 3)
+
+    local flipper = math.sin(Time * 100)
+
+    love.graphics.setColor(unpack(highlight_color(LIGHT_BLUE)))
+    if bird.is_flapping and flipper > 0 then
+        love.graphics.rectangle("fill", -8, 5, 8, 8)
+    else
+        love.graphics.rectangle("fill", -8, 0, 8, 8)
+    end
+
+    love.graphics.pop()
+end
+
 local function drawWheat(w)
     love.graphics.push()
     love.graphics.translate(w.x, w.y)
@@ -372,11 +419,15 @@ local function drawProps(props)
     local window_height = love.graphics.getHeight()
     love.graphics.push()
     love.graphics.translate(math.floor(window_width / 2), window_height)
+
     for _, prop in ipairs(props) do
         if prop.type == "wheat" then
             drawWheat(prop)
         end
     end
+    drawBird(50, -50, bird)
+    drawPoint(50, 50, 5, RED)
+
     love.graphics.pop()
 end
 
