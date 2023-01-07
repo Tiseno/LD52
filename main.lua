@@ -1,16 +1,43 @@
 local love = require("love")
 
-local RED = {1, 0, 0}
-local GREEN = {0, 1, 0}
-local BLUE = {0, 0, 1}
-
 local MAIN_MENU = "MAIN_MENU"
 local GAME_INIT = "GAME_INIT"
 local GAME_RUNNING = "GAME_RUNNING"
 local GAME_PAUSED = "GAME_PAUSED"
 local GAME_OVER = "GAME_OVER"
 
-local STATE = GAME_INIT
+local STATE = MAIN_MENU
+
+--https://colorpicker.me
+local function rgb(r, g, b)
+    return {r / 255, g / 255, b / 255}
+end
+
+local function highlight_color(color)
+    return {
+        math.min(color[1] + 0.1, 1),
+        math.min(color[2] + 0.1, 1),
+        math.min(color[3] + 0.1, 1)
+    }
+end
+
+local function mutate_color(color, factor)
+    return {
+        math.min(color[1] + math.random() * factor, 1),
+        math.min(color[2] + math.random() * factor, 1),
+        math.min(color[3] + math.random() * factor, 1)
+    }
+end
+
+-- The color used by the US National Association of Wheat Growers: https://wheatworld.org/wheat-101/wheat-facts/
+local WHEAT_COLOR = rgb(179, 136, 7)
+
+local LIGHT_BLUE = {0.5, 0.7, 0.9}
+local BROWN_GRAY = rgb(78, 79, 49)
+
+local RED = {1, 0, 0}
+local GREEN = {0, 1, 0}
+local BLUE = {0, 0, 1}
 
 CyclicTime = 0
 Time = 0
@@ -34,9 +61,10 @@ function love.keypressed(key, scancode, isrepeat)
 end
 
 -- SkyVaultGames: https://www.youtube.com/watch?v=vMSjVuJ6wDs
-local function newMenuButton(text, fn)
+local function newMenuButton(text, color, fn)
     return {
         text = text,
+        color = color,
         fn = fn,
         pressed = false
     }
@@ -57,30 +85,44 @@ local function newBone(x, y, width, height, angle, color, children)
     }
 end
 
-local function newWheat(x, y)
-    local color = {200 / 255, 150 / 255, 100 / 255}
-
-    -- 16 total, 7 on left, 8 on right, 1 at the top
-    local seeds = {}
-    for i = 0, 7, 1 do
-        table.insert(seeds, newBone(0, i * 6, 3, 10, 0.4, color, {}))
+local function updateWheat(wheat)
+    local s = wheat.skeleton
+    while true do
+        s.angle = 0.05 * math.sin(wheat.seed + CyclicTime)
+        if #s.children > 1 then
+            break
+        end
+        s = s.children[1]
     end
-    for i = 0, 8, 1 do
-        table.insert(seeds, newBone(0, i * 6 - 3, 3, 10, -0.4, color, {}))
-    end
-    table.insert(seeds, newBone(0, 8 * 6, 3, 10, 0, color, {}))
-
-    local seed = math.random() * math.pi
-    local bend = -0.09 + math.random() * 0.18
-    local random_height = math.random() * 50
-    local stalk3 = newBone(0, 0, 2, 30 + random_height, bend, color, seeds)
-    local stalk2 = newBone(0, 0, 2, 30 + random_height, bend, color, {stalk3})
-    local stalk1 = newBone(0, 0, 2, 30 + random_height, bend + math.pi * 1 + math.random() * 0.08, color, {stalk2})
-
-    return {x = x, y = y, skeleton = stalk1, bend = bend, seed = seed}
+    return wheat
 end
 
-local wheats = {}
+local function newWheat(x, y)
+    -- 16 total, 7 on left, 8 on right, 1 at the top
+    local seeds = {}
+    local color = mutate_color(WHEAT_COLOR, 0.2)
+    local lr = math.random() > 0.5
+    for i = 0, 7, 1 do
+        local offset1 = lr and 3 or 1
+        local offset2 = lr and 1 or 3
+        table.insert(seeds, newBone(0, i * 6 - offset1, 3, 10, 0.4, mutate_color(color, 0.1), {}))
+        table.insert(seeds, newBone(0, i * 6 - offset2, 3, 10, -0.4, mutate_color(color, 0.1), {}))
+    end
+    table.insert(seeds, newBone(0, 7 * 6 + 3, 3, 10, 0, mutate_color(color, 0.1), {}))
+
+    local bend = math.pi * 1 - 0.1 + math.random() * 0.2
+    local random_height = math.random() * 30
+    local stalk3 = newBone(0, 0, 2, 30 + random_height, 0, color, seeds)
+    local stalk2 = newBone(0, 0, 2, 30 + random_height, 0, color, {stalk3})
+    local stalk1 = newBone(0, 0, 2, 30 + random_height, 0, color, {stalk2})
+
+    local seed = math.random() * math.pi
+    local wheat = {type = "wheat", x = x, y = y, skeleton = stalk1, bend = bend, seed = seed}
+    return updateWheat(wheat)
+end
+
+local Props = {}
+
 -- https://love2d.org/wiki/Tutorial:Physics
 local function initGameWorld()
     World = love.physics.newWorld(0, 981, true)
@@ -94,14 +136,14 @@ local function initGameWorld()
     Objects.ground.fixture = love.physics.newFixture(Objects.ground.body, Objects.ground.shape)
 
     for i = 0, 200, 1 do
-        table.insert(wheats, newWheat(0 + i * 5 + math.random()*3, 500))
+        table.insert(Props, newWheat(0 + i * 5 + math.random() * 3, 500))
     end
 end
 
 local function destroyWorld()
     Objects = {}
     World = {}
-    wheats = {}
+    Props = {}
 end
 
 function love.load()
@@ -112,6 +154,7 @@ function love.load()
         main_menu,
         newMenuButton(
             "Start Game",
+            BROWN_GRAY,
             function()
                 print("Changed state to init")
                 STATE = GAME_INIT
@@ -122,6 +165,7 @@ function love.load()
         main_menu,
         newMenuButton(
             "Exit",
+            BROWN_GRAY,
             function()
                 love.event.quit()
             end
@@ -132,6 +176,7 @@ function love.load()
         pause_menu,
         newMenuButton(
             "Exit Game",
+            BROWN_GRAY,
             function()
                 destroyWorld()
                 STATE = MAIN_MENU
@@ -142,17 +187,14 @@ function love.load()
     table.insert(
         pause_menu,
         newMenuButton(
-            "Unpause Game",
+            "Unpause",
+            BROWN_GRAY,
             function()
                 STATE = GAME_RUNNING
             end
         )
     )
     print("Loaded")
-end
-
-function updateWheat(wheat)
-
 end
 
 function love.update(dt)
@@ -166,13 +208,12 @@ function love.update(dt)
     end
 
     CyclicTime = CyclicTime + dt
-    if CyclicTime > math.pi then
-        CyclicTime = CyclicTime - math.pi
+    if CyclicTime > (2 * math.pi) then
+        CyclicTime = CyclicTime - (2 * math.pi)
     end
 
     Time = Time + dt
     if Time > math.pi then
-        print(Objects.ground.body:getX(), Objects.ground.body:getY())
         Time = Time - 1
     end
 
@@ -194,7 +235,7 @@ function love.update(dt)
         Objects.ground.body:setX(Objects.ground.body:getX() + dt * 100)
     end
 
-    for i, wheat in ipairs(wheats) do
+    for i, wheat in ipairs(Props) do
         updateWheat(wheat)
     end
 end
@@ -214,9 +255,9 @@ local function drawMenu(menu)
         local highlighted = mouseX >= x and mouseX <= (x + menu_width) and mouseY >= y and mouseY <= (y + button_height)
 
         if highlighted then
-            love.graphics.setColor(0.4, 0.4, 0.9)
+            love.graphics.setColor(unpack(highlight_color(button.color)))
         else
-            love.graphics.setColor(0.5, 0.5, 0.9)
+            love.graphics.setColor(unpack(button.color))
         end
         love.graphics.rectangle("fill", x, y, menu_width, button_height)
 
@@ -259,15 +300,15 @@ local function drawBone(bone)
 end
 
 local function drawSkeleton(x, y, skeleton)
-    love.graphics.push()
-    love.graphics.translate(x, y)
     drawBone(skeleton)
-    love.graphics.pop()
 end
 
-
 local function drawWheat(w)
+    love.graphics.push()
+    love.graphics.translate(w.x, w.y)
+    love.graphics.rotate(w.bend)
     drawSkeleton(w.x, w.y, w.skeleton)
+    love.graphics.pop()
 end
 
 local function drawPoint(x, y, size, color)
@@ -275,19 +316,28 @@ local function drawPoint(x, y, size, color)
     love.graphics.rectangle("fill", x - (size / 2), y - (size / 2), size, size)
 end
 
+local function drawMainMenuProps()
+    for i, prop in ipairs(Props) do
+        if prop.type == 'wheat' then
+          drawWheat(prop)
+        end
+    end
+end
+
 local function drawWorld()
-    love.graphics.setColor(0.5, 0.7, 0.9)
+    love.graphics.setColor(unpack(BROWN_GRAY))
     love.graphics.polygon("fill", Objects.ground.body:getWorldPoints(Objects.ground.shape:getPoints()))
 
-    for i, wheat in ipairs(wheats) do
-        drawWheat(wheat)
+    for i, prop in ipairs(Props) do
+        if prop.type == 'wheat' then
+          drawWheat(prop)
+        end
     end
 end
 
 function love.draw(dt)
-    print(STATE)
-
     if STATE == MAIN_MENU then
+        drawMainMenuProps()
         drawMenu(main_menu)
     end
 
@@ -297,7 +347,10 @@ function love.draw(dt)
 
     if STATE == GAME_PAUSED then
         drawWorld()
-        -- TODO draw shadow
+        local window_width = love.graphics.getWidth()
+        local window_height = love.graphics.getHeight()
+        love.graphics.setColor(0, 0, 0, 0.3)
+        love.graphics.rectangle("fill", 0, 0, window_width, window_height)
         drawMenu(pause_menu)
     end
 
