@@ -146,7 +146,13 @@ local function destroyWorld()
     Props = {}
 end
 
+local MainMenuProps = {}
+
 function love.load()
+    for i = 0, 200, 1 do
+        table.insert(MainMenuProps, newWheat(0 + i * 5 + math.random() * 3, 660))
+    end
+
     Font = love.graphics.newFont(16)
     love.physics.setMeter(100)
 
@@ -197,26 +203,19 @@ function love.load()
     print("Loaded")
 end
 
-function love.update(dt)
-    if STATE == GAME_INIT then
-        initGameWorld()
-        STATE = GAME_RUNNING
+function updateProp(prop, dt)
+    if prop.type == "wheat" then
+        updateWheat(prop)
     end
+end
 
-    if STATE ~= GAME_RUNNING then
-        return
+function main_update(dt)
+    for i, prop in ipairs(MainMenuProps) do
+        updateProp(prop, dt)
     end
+end
 
-    CyclicTime = CyclicTime + dt
-    if CyclicTime > (2 * math.pi) then
-        CyclicTime = CyclicTime - (2 * math.pi)
-    end
-
-    Time = Time + dt
-    if Time > math.pi then
-        Time = Time - 1
-    end
-
+function game_update(dt)
     World:update(dt)
 
     if love.keyboard.isDown("up") then
@@ -235,8 +234,37 @@ function love.update(dt)
         Objects.ground.body:setX(Objects.ground.body:getX() + dt * 100)
     end
 
-    for i, wheat in ipairs(Props) do
-        updateWheat(wheat)
+    for i, prop in ipairs(Props) do
+        updateProp(prop, dt)
+    end
+end
+
+function love.update(dt)
+    if STATE == GAME_INIT then
+        initGameWorld()
+        STATE = GAME_RUNNING
+    end
+
+    if STATE == GAME_PAUSED then
+        return
+    end
+
+    CyclicTime = CyclicTime + dt
+    if CyclicTime > (2 * math.pi) then
+        CyclicTime = CyclicTime - (2 * math.pi)
+    end
+
+    Time = Time + dt
+    if Time > math.pi then
+        Time = Time - 1
+    end
+
+    if STATE == GAME_RUNNING then
+        game_update(dt)
+    end
+
+    if STATE == MAIN_MENU then
+        main_update(dt)
     end
 end
 
@@ -316,46 +344,50 @@ local function drawPoint(x, y, size, color)
     love.graphics.rectangle("fill", x - (size / 2), y - (size / 2), size, size)
 end
 
-local function drawMainMenuProps()
-    for i, prop in ipairs(Props) do
-        if prop.type == 'wheat' then
-          drawWheat(prop)
+local function drawProps(props)
+    for i, prop in ipairs(props) do
+        if prop.type == "wheat" then
+            drawWheat(prop)
         end
     end
 end
 
-local function drawWorld()
+local function drawMainMenuWorld()
+    drawProps(MainMenuProps)
+end
+
+local function drawGameWorld()
     love.graphics.setColor(unpack(BROWN_GRAY))
     love.graphics.polygon("fill", Objects.ground.body:getWorldPoints(Objects.ground.shape:getPoints()))
 
-    for i, prop in ipairs(Props) do
-        if prop.type == 'wheat' then
-          drawWheat(prop)
-        end
-    end
+    drawProps(Props)
+end
+
+local function drawWindowTint()
+    local window_width = love.graphics.getWidth()
+    local window_height = love.graphics.getHeight()
+    love.graphics.setColor(0, 0, 0, 0.3)
+    love.graphics.rectangle("fill", 0, 0, window_width, window_height)
 end
 
 function love.draw(dt)
     if STATE == MAIN_MENU then
-        drawMainMenuProps()
+        drawMainMenuWorld()
         drawMenu(main_menu)
     end
 
     if STATE == GAME_RUNNING then
-        drawWorld()
+        drawGameWorld()
     end
 
     if STATE == GAME_PAUSED then
-        drawWorld()
-        local window_width = love.graphics.getWidth()
-        local window_height = love.graphics.getHeight()
-        love.graphics.setColor(0, 0, 0, 0.3)
-        love.graphics.rectangle("fill", 0, 0, window_width, window_height)
+        drawGameWorld()
+        drawWindowTint()
         drawMenu(pause_menu)
     end
 
     if STATE == GAME_OVER then
-        drawWorld()
+        drawGameWorld()
     -- TODO
     end
 end
