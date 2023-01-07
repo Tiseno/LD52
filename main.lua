@@ -13,6 +13,14 @@ local function rgb(r, g, b)
     return {r / 255, g / 255, b / 255}
 end
 
+local function darken_color(color)
+    return {
+        math.max(math.min(color[1] * 0.4, 1), 0),
+        math.max(math.min(color[2] * 0.4, 1), 0),
+        math.max(math.min(color[3] * 0.4, 1), 0)
+    }
+end
+
 local function highlight_color(color)
     return {
         math.min(color[1] + 0.1, 1),
@@ -113,21 +121,23 @@ local function updateWheat(wheat)
     return wheat
 end
 
-local function newWheat(x, y)
-    -- 16 total, 7 on left, 8 on right, 1 at the top
+local function newWheat(x, y, baseColor, mutation)
     local seeds = {}
-    local color = mutate_color(WHEAT_COLOR, 0.2)
+    local color = mutate_color(baseColor, mutation)
     local lr = math.random() > 0.5
     for i = 0, 7, 1 do
         local offset1 = lr and 3 or 1
         local offset2 = lr and 1 or 3
-        table.insert(seeds, newBone(0, i * 6 - offset1, 3, 10, 0.3 + math.random() * 0.2, mutate_color(color, 0.1), {}))
         table.insert(
             seeds,
-            newBone(0, i * 6 - offset2, 3, 10, -0.3 - math.random() * 0.2, mutate_color(color, 0.1), {})
+            newBone(0, i * 6 - offset1, 3, 10, 0.3 + math.random() * 0.2, mutate_color(color, mutation), {})
+        )
+        table.insert(
+            seeds,
+            newBone(0, i * 6 - offset2, 3, 10, -0.3 - math.random() * 0.2, mutate_color(color, mutation), {})
         )
     end
-    table.insert(seeds, newBone(0, 7 * 6 + 3, 3, 10, 0, mutate_color(color, 0.1), {}))
+    table.insert(seeds, newBone(0, 7 * 6 + 3, 3, 10, 0, mutate_color(color, mutation), {}))
 
     local bend = math.pi * 1 - 0.1 + math.random() * 0.2
     local random_height = math.random() * 30
@@ -142,34 +152,58 @@ end
 
 local World = {}
 local Objects = {}
+local BackgroundProps = {}
 local Props = {}
 local bird = {facing_left = true, is_flapping = false}
+
+local function addDarkWheat(list)
+    local n = 380
+    local spacing = 5
+    for i = 0, n, 1 do
+        table.insert(
+            list,
+            newWheat(-(n * spacing * 0.5) + (i * spacing) - 2 + math.random() * 4, 0, darken_color(WHEAT_COLOR), 0)
+        )
+    end
+end
 
 local function addWheat(list)
     local n = 380
     local spacing = 5
     for i = 0, n, 1 do
-        table.insert(list, newWheat(-(n * spacing * 0.5) + (i * spacing) - 2 + math.random() * 4, 0))
+        table.insert(list, newWheat(-(n * spacing * 0.5) + (i * spacing) - 2 + math.random() * 4, 0, WHEAT_COLOR, 0.1))
     end
 end
 
 -- https://love2d.org/wiki/Tutorial:Physics
 local function initGameWorld()
     World = love.physics.newWorld(0, 981, true)
-    Objects.ground = {}
     local window_width = love.graphics.getWidth()
     local window_height = love.graphics.getHeight()
 
-    Objects.ground.body = love.physics.newBody(World, window_width / 2, 0)
-    Objects.ground.shape = love.physics.newRectangleShape(window_width, 40)
+    local ground_width = 5000
+    Objects.ground = {}
+    Objects.ground.body = love.physics.newBody(World, ground_width / 2, 20)
+    Objects.ground.shape = love.physics.newRectangleShape(ground_width, 40)
     Objects.ground.fixture = love.physics.newFixture(Objects.ground.body, Objects.ground.shape)
+    Objects.ground.fixture:setFriction(0.9)
 
+    local bird_size = 10
+    Objects.bird = {}
+    Objects.bird.body = love.physics.newBody(World, window_width / 2, -window_height / 2, "dynamic")
+    Objects.bird.shape = love.physics.newRectangleShape(bird_size, bird_size)
+    Objects.bird.fixture = love.physics.newFixture(Objects.bird.body, Objects.bird.shape)
+    Objects.bird.fixture:setFriction(0.9)
+    Objects.bird.state = {facing_left = true, is_flapping = false}
+
+    addDarkWheat(BackgroundProps)
     addWheat(Props)
 end
 
 local function destroyWorld()
     World = {}
     Objects = {}
+    BackgroundProps = {}
     Props = {}
 end
 
@@ -253,25 +287,45 @@ end
 local function game_update(dt)
     World:update(dt)
 
-    if love.keyboard.isDown("up") then
-        bird.is_flapping = true
+    if love.keyboard.isDown("w") then
         Objects.ground.body:setY(Objects.ground.body:getY() - dt * 100)
+    end
+    if love.keyboard.isDown("s") then
+        Objects.ground.body:setY(Objects.ground.body:getY() + dt * 100)
+    end
+    if love.keyboard.isDown("a") then
+        Objects.ground.body:setX(Objects.ground.body:getX() - dt * 100)
+    end
+    if love.keyboard.isDown("d") then
+        Objects.ground.body:setX(Objects.ground.body:getX() + dt * 100)
+    end
+
+    if love.keyboard.isDown("up") or love.keyboard.isDown("k") then
+        bird.is_flapping = true
+        local xv, yv = Objects.bird.body:getLinearVelocity()
+        if love.keyboard.isDown("lshift") then
+            if yv > -300 then
+                Objects.bird.body:applyForce(0, -90)
+            end
+        elseif yv > -10 then
+            Objects.bird.body:applyForce(0, -90)
+        end
     else
         bird.is_flapping = false
     end
 
-    if love.keyboard.isDown("down") then
-        Objects.ground.body:setY(Objects.ground.body:getY() + dt * 100)
-    end
-
-    if love.keyboard.isDown("left") then
+    if love.keyboard.isDown("left") or love.keyboard.isDown("h") then
+        Objects.bird.body:applyForce(-10, 0)
         bird.facing_left = true
-        Objects.ground.body:setX(Objects.ground.body:getX() - dt * 100)
     end
 
-    if love.keyboard.isDown("right") then
+    if love.keyboard.isDown("right") or love.keyboard.isDown("l") then
+        Objects.bird.body:applyForce(10, 0)
         bird.facing_left = false
-        Objects.ground.body:setX(Objects.ground.body:getX() + dt * 100)
+    end
+
+    for _, prop in ipairs(BackgroundProps) do
+        updateProp(prop, dt)
     end
 
     for _, prop in ipairs(Props) do
@@ -371,7 +425,7 @@ local function drawBone(bone)
     love.graphics.pop()
 end
 
-local function drawBird(x, y, bird)
+local function drawBird(bird, x, y)
     love.graphics.push()
     love.graphics.translate(x, y)
     if bird.facing_left then
@@ -425,9 +479,6 @@ local function drawProps(props)
             drawWheat(prop)
         end
     end
-    drawBird(50, -50, bird)
-    drawPoint(50, 50, 5, RED)
-
     love.graphics.pop()
 end
 
@@ -435,15 +486,22 @@ local function drawMainMenuWorld()
     drawProps(MainMenuProps)
 end
 
-local function drawGameWorld()
-    -- local window_height = love.graphics.getHeight()
-    -- love.graphics.push()
-    -- love.graphics.translate(0, window_height)
-    --
-    -- love.graphics.setColor(unpack(BROWN_GRAY))
-    -- love.graphics.polygon("fill", Objects.ground.body:getWorldPoints(Objects.ground.shape:getPoints()))
-    -- love.graphics.pop()
+local function drawObjects()
+    local window_height = love.graphics.getHeight()
+    love.graphics.push()
+    love.graphics.translate(0, window_height)
 
+    love.graphics.setColor(unpack(BROWN_GRAY))
+    love.graphics.polygon("fill", Objects.ground.body:getWorldPoints(Objects.ground.shape:getPoints()))
+
+    drawBird --[[ Objects.bird.state ]](bird, Objects.bird.body:getWorldPoints(Objects.bird.shape:getPoints()))
+
+    love.graphics.pop()
+end
+
+local function drawGameWorld()
+    drawProps(BackgroundProps)
+    drawObjects()
     drawProps(Props)
 end
 
