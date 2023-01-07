@@ -6,7 +6,7 @@ local GAME_RUNNING = "GAME_RUNNING"
 local GAME_PAUSED = "GAME_PAUSED"
 local GAME_OVER = "GAME_OVER"
 
-local STATE = GAME_INIT
+local STATE = MAIN_MENU
 
 --https://colorpicker.me
 local function rgb(r, g, b)
@@ -65,11 +65,6 @@ local BackgroundProps = {}
 local Props = {}
 
 function love.keypressed(key, scancode, isrepeat)
-    print("keypress", key)
-    --print(key)
-    --print(scancode)
-    --print(isrepeat)
-    --print()
     if key == "escape" or key == "p" then
         if STATE == GAME_RUNNING then
             STATE = GAME_PAUSED
@@ -186,11 +181,11 @@ local function addDarkWheat(list)
     end
 end
 
-local function addWheat(list)
-    local n = 380
+local function addWheat(list, color, mut)
+    local n = 300
     local spacing = 5
     for i = 0, n, 1 do
-        table.insert(list, newWheat(-(n * spacing * 0.5) + (i * spacing) - 2 + math.random() * 4, 0, WHEAT_COLOR, 0.1))
+        table.insert(list, newWheat(-(spacing * n / 2) + (i * spacing) - 2 + math.random() * 4, 0, color, mut))
     end
 end
 
@@ -201,16 +196,27 @@ local function initGameWorld()
     local window_width = love.graphics.getWidth()
     local window_height = love.graphics.getHeight()
 
-    local ground_width = 5000
     Objects.ground = {}
-    Objects.ground.body = love.physics.newBody(World, ground_width / 2, 20)
-    Objects.ground.shape = love.physics.newRectangleShape(ground_width, 40)
+    Objects.ground.body = love.physics.newBody(World, 0, 20)
+    Objects.ground.shape = love.physics.newRectangleShape(5000, 40)
     Objects.ground.fixture = love.physics.newFixture(Objects.ground.body, Objects.ground.shape)
     Objects.ground.fixture:setFriction(1)
 
+    Objects.left_wall = {}
+    Objects.left_wall.body = love.physics.newBody(World, -(1920 / 2) - 100, 0)
+    Objects.left_wall.shape = love.physics.newRectangleShape(40, 5000)
+    Objects.left_wall.fixture = love.physics.newFixture(Objects.left_wall.body, Objects.left_wall.shape)
+    Objects.left_wall.fixture:setFriction(1)
+
+    Objects.right_wall = {}
+    Objects.right_wall.body = love.physics.newBody(World, (1920 / 2) + 100, 0)
+    Objects.right_wall.shape = love.physics.newRectangleShape(40, 5000)
+    Objects.right_wall.fixture = love.physics.newFixture(Objects.right_wall.body, Objects.right_wall.shape)
+    Objects.right_wall.fixture:setFriction(1)
+
     local bird_size = 10
     Objects.bird = {}
-    Objects.bird.body = love.physics.newBody(World, window_width / 2, -window_height / 2, "dynamic")
+    Objects.bird.body = love.physics.newBody(World, 0, 0, "dynamic")
     Objects.bird.shape = love.physics.newCircleShape(bird_size)
     Objects.bird.fixture = love.physics.newFixture(Objects.bird.body, Objects.bird.shape)
     Objects.bird.fixture:setFriction(1)
@@ -233,8 +239,8 @@ local function initGameWorld()
 
     World:setCallbacks(birdBeginsContactWithGround, birdEndsContactWithGround)
 
-    addDarkWheat(BackgroundProps)
-    addWheat(Props)
+    addWheat(BackgroundProps, darken_color(WHEAT_COLOR), 0)
+    addWheat(Props, WHEAT_COLOR, 0.1)
 end
 
 local function destroyWorld()
@@ -249,8 +255,8 @@ end
 local MainMenuProps = {}
 
 function love.load()
-    addDarkWheat(MainMenuProps)
-    addWheat(MainMenuProps)
+    addWheat(MainMenuProps, darken_color(WHEAT_COLOR), 0)
+    addWheat(MainMenuProps, WHEAT_COLOR, 0.1)
 
     FontSmall = love.graphics.newFont(24)
     FontLarge = love.graphics.newFont(32)
@@ -260,7 +266,7 @@ function love.load()
     table.insert(
         main_menu,
         newMenuButton(
-            "New Game",
+            "Play",
             FontSmall,
             WHITE,
             BROWN_GRAY,
@@ -343,11 +349,11 @@ local function game_update(dt)
     local xv, yv = Objects.bird.body:getLinearVelocity()
     if love.keyboard.isDown("up") or love.keyboard.isDown("k") then
         Objects.bird.state.flapping = true
-        if love.keyboard.isDown("lshift") then
+        if love.keyboard.isDown("lshift") or love.keyboard.isDown("space") then
             if yv > -300 then
                 Objects.bird.body:applyForce(0, -90)
             end
-        elseif love.keyboard.isDown("lctrl") then
+        elseif love.keyboard.isDown("lctrl") or love.keyboard.isDown("j") or love.keyboard.isDown("down") then
             if yv > 200 then
                 Objects.bird.body:applyForce(0, -90)
             end
@@ -422,6 +428,9 @@ function love.update(dt)
     Time = Time + dt
     if Time > math.pi then
         Time = Time - 1
+        if Objects.bird then
+            print(Objects.bird.body:getPosition())
+        end
     end
 
     if STATE == GAME_RUNNING then
@@ -552,7 +561,7 @@ local function drawProps(props)
     local window_width = love.graphics.getWidth()
     local window_height = love.graphics.getHeight()
     love.graphics.push()
-    love.graphics.translate(math.floor(window_width / 2), window_height)
+    love.graphics.translate(window_width / 2, window_height)
 
     for _, prop in ipairs(props) do
         if prop.type == "wheat" then
@@ -567,12 +576,19 @@ local function drawMainMenuWorld()
 end
 
 local function drawObjects()
+    local window_width = love.graphics.getWidth()
     local window_height = love.graphics.getHeight()
     love.graphics.push()
-    love.graphics.translate(0, window_height)
+    love.graphics.translate(window_width / 2, window_height)
 
     love.graphics.setColor(unpack(BROWN_GRAY))
     love.graphics.polygon("fill", Objects.ground.body:getWorldPoints(Objects.ground.shape:getPoints()))
+
+    -- love.graphics.setColor(unpack(BROWN_GRAY))
+    -- love.graphics.polygon("fill", Objects.left_wall.body:getWorldPoints(Objects.left_wall.shape:getPoints()))
+
+    -- love.graphics.setColor(unpack(BROWN_GRAY))
+    -- love.graphics.polygon("fill", Objects.right_wall.body:getWorldPoints(Objects.right_wall.shape:getPoints()))
 
     drawBird(Objects.bird.state, Objects.bird.body:getPosition())
 
