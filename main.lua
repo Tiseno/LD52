@@ -61,7 +61,7 @@ function love.keypressed(key, scancode, isrepeat)
     end
 end
 
-local function newMenuText(text, font, textColor, fn)
+local function newMenuText(text, font, textColor)
     return {
         type = "text",
         text = text,
@@ -231,19 +231,19 @@ function love.load()
     print("Loaded")
 end
 
-function updateProp(prop, dt)
+local function updateProp(prop, dt)
     if prop.type == "wheat" then
         updateWheat(prop)
     end
 end
 
-function main_update(dt)
-    for i, prop in ipairs(MainMenuProps) do
+local function main_update(dt)
+    for _, prop in ipairs(MainMenuProps) do
         updateProp(prop, dt)
     end
 end
 
-function game_update(dt)
+local function game_update(dt)
     World:update(dt)
 
     if love.keyboard.isDown("up") then
@@ -262,7 +262,7 @@ function game_update(dt)
         Objects.ground.body:setX(Objects.ground.body:getX() + dt * 100)
     end
 
-    for i, prop in ipairs(Props) do
+    for _, prop in ipairs(Props) do
         updateProp(prop, dt)
     end
 end
@@ -344,18 +344,6 @@ local function drawMenu(menu)
 end
 
 -- https://love2d.org/wiki/love.graphics.rectangle
-local function drawRotatedRectangle(x, y, width, height, angle, color)
-    -- We cannot rotate the rectangle directly, but we
-    -- can move and rotate the coordinate system.
-    love.graphics.push()
-    love.graphics.translate(x, y)
-    love.graphics.rotate(angle)
-    -- love.graphics.rectangle(mode, 0, 0, width, height) -- origin in the top left corner
-    love.graphics.setColor(unpack(color))
-    love.graphics.rectangle("fill", -width / 2, -height / 2, width, height) -- origin in the middle
-    love.graphics.pop()
-end
-
 local function drawBone(bone)
     love.graphics.push()
     love.graphics.translate(bone.x, bone.y)
@@ -365,21 +353,17 @@ local function drawBone(bone)
     -- love.graphics.rectangle("fill", 0, 0, bone.width, bone.height) -- origin in the top left corner
     -- love.graphics.rectangle("fill", -bone.width / 2, -bone.height / 2, bone.width, bone.height) -- origin in the middle
     love.graphics.translate(0, bone.height)
-    for i, childBone in ipairs(bone.children) do
+    for _, childBone in ipairs(bone.children) do
         drawBone(childBone)
     end
     love.graphics.pop()
-end
-
-local function drawSkeleton(x, y, skeleton)
-    drawBone(skeleton)
 end
 
 local function drawWheat(w)
     love.graphics.push()
     love.graphics.translate(w.x, w.y)
     love.graphics.rotate(w.bend)
-    drawSkeleton(w.x, w.y, w.skeleton)
+    drawBone(w.skeleton)
     love.graphics.pop()
 end
 
@@ -388,7 +372,7 @@ local function drawProps(props)
     local window_height = love.graphics.getHeight()
     love.graphics.push()
     love.graphics.translate(math.floor(window_width / 2), window_height)
-    for i, prop in ipairs(props) do
+    for _, prop in ipairs(props) do
         if prop.type == "wheat" then
             drawWheat(prop)
         end
