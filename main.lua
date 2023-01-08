@@ -88,7 +88,7 @@ local SHOW_CALORIES_THRESHHOLD = 50
 local SHOW_CALORIES_WARNING_THRESHHOLD = 40
 local SHOW_CALORIES_CRITICAL_THRESHHOLD = 20
 
-local DEFAULT_FRICTION = 0.7
+local DEFAULT_FRICTION = 0.9
 
 local function random_frog_verb()
     local reasons = {
@@ -479,7 +479,12 @@ local main_menu = {}
 local pause_menu = {}
 local game_over_menu = {}
 
+local sounds = {}
+
 function love.load()
+    sounds.croak_sound = love.audio.newSource("croak.wav", "static")
+    sounds.croak_sound:play()
+
     addWheat(MainMenuProps, darken_color(WHEAT_COLOR), 0)
     addWheat(MainMenuProps, WHEAT_COLOR, 0.1)
 
@@ -641,8 +646,11 @@ local function updateBird(bird, dt)
 
     local FLY_X_INERTIA = 600
 
-    local JUMP_Y_IMPULSE = 8
-    local JUMP_X_IMPULSE = 2
+    local JUMP_Y_IMPULSE = 10
+    local JUMP_X_IMPULSE = 4
+
+    local RUN_Y_IMPULSE = 4
+    local RUN_X_IMPULSE = 2
 
     local xv, yv = bird.body:getLinearVelocity()
     if up then
@@ -654,7 +662,7 @@ local function updateBird(bird, dt)
         elseif bird.state.on_ground then
             -- do nothing, we be perching
         elseif down then
-            if yv > 200 then
+            if yv > 300 then
                 bird.body:applyForce(0, -FLY_Y_FORCE * dt)
             end
         elseif yv > 0 then
@@ -667,6 +675,10 @@ local function updateBird(bird, dt)
     if right then
         if bird.state.flapping and xv < 300 then
             bird.body:applyForce(FLY_X_FORCE * dt, 0)
+        elseif bird.state.on_ground then
+            bird.body:applyLinearImpulse(RUN_X_IMPULSE, -RUN_Y_IMPULSE)
+            bird.state.expended_calories = bird.state.expended_calories - 0.01
+            bird.state.on_ground = false
         end
         bird.state.facing_left = false
     else
@@ -678,7 +690,12 @@ local function updateBird(bird, dt)
     if left then
         if bird.state.flapping and xv > -300 then
             bird.body:applyForce(-FLY_X_FORCE * dt, 0)
+        elseif bird.state.on_ground then
+            bird.body:applyLinearImpulse(-RUN_X_IMPULSE, -RUN_Y_IMPULSE)
+            bird.state.expended_calories = bird.state.expended_calories - 0.01
+            bird.state.on_ground = false
         end
+
         bird.state.facing_left = true
     else
         if bird.state.flapping and xv > 10 then
