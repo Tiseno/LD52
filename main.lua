@@ -52,7 +52,7 @@ local GREEN = {0, 1, 0}
 local BLUE = {0, 0, 1}
 
 CyclicTime = 0
-Time = 0
+TimeAlive = 0
 KernelTimer = 0
 KERNEL_TIMER_COOLDOWN = 0.2 -- 2 -- TODO
 
@@ -133,6 +133,10 @@ local function format_death_reason(death_reason)
     else
         return "died"
     end
+end
+
+local function setScore(source)
+    Score.score = Score.collected * 13 + math.floor(Score.time * 1.13)
 end
 
 local function setDeathReason(source)
@@ -323,6 +327,7 @@ end
 local function killBird(source)
     Objects.bird.state.dead = true
     setDeathReason(source)
+    setScore()
 end
 
 local function createBird()
@@ -358,7 +363,7 @@ end
 -- https://love2d.org/wiki/Tutorial:Physics
 local function initGameWorld()
     destroyWorld()
-    Time = 0
+    TimeAlive = 0
     KernelTimer = 0
 
     World = love.physics.newWorld(0, 981, true)
@@ -652,20 +657,6 @@ end
 local function updateGame(dt)
     World:update(dt)
 
-    -- TODO remove
-    -- if love.keyboard.isDown("up") then
-    --     Objects.nest.body:setY(Objects.nest.body:getY() - dt * 100)
-    -- end
-    -- if love.keyboard.isDown("down") then
-    --     Objects.nest.body:setY(Objects.nest.body:getY() + dt * 100)
-    -- end
-    -- if love.keyboard.isDown("left") then
-    --     Objects.nest.body:setX(Objects.nest.body:getX() - dt * 100)
-    -- end
-    -- if love.keyboard.isDown("right") then
-    --     Objects.nest.body:setX(Objects.nest.body:getX() + dt * 100)
-    -- end
-
     if Objects.kernels == nil then
         Objects.kernels = {}
     end
@@ -690,7 +681,7 @@ local function updateGame(dt)
     if STATE == GAME_RUNNING and Objects.bird.state.dead then
         STATE = GAME_OVER
         -- TODO store wheat score
-        Score.time = Time
+        Score.time = TimeAlive
         updateMenu(game_over_menu)
     end
 end
@@ -710,24 +701,7 @@ function love.update(dt)
         CyclicTime = CyclicTime - (2 * math.pi)
     end
 
-    Time = Time + dt
-    if Time > 1 then
-        Time = Time - 1
-    -- TODO remove these
-    -- if STATE == GAME_RUNNING and Objects.bird then
-    --     print("Bird is at", Objects.bird.body:getPosition())
-    -- end
-    -- if STATE == GAME_RUNNING and Objects.nest then
-    --     print("Nest is at", Objects.nest.body:getPosition())
-    -- end
-    -- if STATE == GAME_RUNNING and Objects.nest_basement then
-    --     print("Nest basement is at", Objects.nest_basement.body:getPosition())
-    -- end
-    -- if STATE == GAME_RUNNING and Objects.nest_surface then
-    --     print("Nest top is at", Objects.nest_surface.body:getPosition())
-    -- end
-    end
-
+    TimeAlive = TimeAlive + dt
     KernelTimer = KernelTimer + dt
 
     if STATE == GAME_RUNNING or STATE == GAME_OVER then
@@ -840,7 +814,7 @@ local function drawBird(bird, x, y)
     love.graphics.rectangle("fill", -4, 9, 3, 3)
     love.graphics.rectangle("fill", 0, 9, 3, 3)
 
-    local flipper = math.sin(Time * 100)
+    local flipper = math.sin(CyclicTime * 100)
 
     love.graphics.setColor(unpack(highlight_color(LIGHT_BLUE)))
     if bird.flapping and flipper > 0 then
