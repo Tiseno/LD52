@@ -72,6 +72,8 @@ local EATEN_BY_FROG = 1
 local MANGLED_BY_TRACTOR = 2
 local FELL_FROM_HIGH_PLACE = 3
 
+local KERNEL_CALORIE_WORTH = 15
+
 local CATEGORY_DEFAULT = 1
 local CATEGORY_STATIC = 2
 local CATEGORY_BIRD = 3
@@ -79,7 +81,9 @@ local CATEGORY_KERNEL = 4
 
 local DEFAULT_BIRD_MASS = 0.03
 local DEFAULT_BIRD_INERTIA = 1000000000000000
-local DEFAULT_KERNEL_MASS = 0.0015
+local DEFAULT_KERNEL_MASS = 0.001
+
+local DEFAULT_FRICTION = 0.7
 
 local function random_frog_verb()
     local reasons = {
@@ -116,23 +120,44 @@ local function random_falling_terms()
         "apparently forgot how to fly",
         "failed the bird exam",
         "malfunctioned mid air",
-        "got a cramp",
-        "stopped pressing up"
+        "got a wing cramp"
+    }
+    return reasons[1 + math.floor(math.random() * #reasons)]
+end
+
+local function random_starving_terms()
+    local reasons = {
+        "starved to death",
+        "got too hungry"
     }
     return reasons[1 + math.floor(math.random() * #reasons)]
 end
 
 local function format_death_reason(death_reason)
     if death_reason == STARVED_TO_DEATH then
-        return "starved to death"
+        return random_starving_terms()
+    elseif death_reason == FELL_FROM_HIGH_PLACE then
+        return random_falling_terms()
     elseif death_reason == EATEN_BY_FROG then
         return string.format("got %s by a frog", random_frog_verb())
     elseif death_reason == MANGLED_BY_TRACTOR then
         return string.format("got %s by a tractor", random_tractor_verb())
-    elseif death_reason == FELL_FROM_HIGH_PLACE then
-        return random_falling_terms()
     else
         return "died"
+    end
+end
+
+local function format_death_reason_hint(death_reason)
+    if death_reason == STARVED_TO_DEATH then
+        return string.format("FYI: You eat one wheat (%ical) every return to the nest.", KERNEL_CALORIE_WORTH)
+    elseif death_reason == FELL_FROM_HIGH_PLACE then
+        return ""
+    elseif death_reason == EATEN_BY_FROG then
+        return ""
+    elseif death_reason == MANGLED_BY_TRACTOR then
+        return ""
+    else
+        return ""
     end
 end
 
@@ -142,6 +167,14 @@ end
 
 local function setDeathReason(source)
     Score.death_reason = format_death_reason(source)
+    Score.hint = format_death_reason_hint(source)
+end
+
+local function killBird(source)
+    Objects.bird.state.dead = true
+    setDeathReason(source)
+    Score.time = TimeAlive
+    setScore()
 end
 
 function love.keypressed(key, scancode, isrepeat)
@@ -155,27 +188,19 @@ function love.keypressed(key, scancode, isrepeat)
 
     -- TODO remove all these
     if key == "5" then
-        Objects.bird.state.dead = true
-        setDeathReason(MANGLED_BY_TRACTOR)
+        killBird(MANGLED_BY_TRACTOR)
     end
 
     if key == "6" then
-        Objects.bird.state.dead = true
-        setDeathReason(STARVED_TO_DEATH)
+        killBird(STARVED_TO_DEATH)
     end
 
     if key == "7" then
-        Objects.bird.state.dead = true
-        setDeathReason(FELL_FROM_HIGH_PLACE)
+        killBird(FELL_FROM_HIGH_PLACE)
     end
 
     if key == "8" then
-        Objects.bird.state.dead = true
-        setDeathReason(EATEN_BY_FROG)
-    end
-
-    if key == "0" then
-        Objects.bird.state.dead = true
+        killBird(EATEN_BY_FROG)
     end
 
     if key == "9" then
@@ -309,7 +334,7 @@ local function createStatic(x, y, width, height, secondCat)
     object.body = love.physics.newBody(World, x, y)
     object.shape = love.physics.newRectangleShape(width, height)
     object.fixture = love.physics.newFixture(object.body, object.shape)
-    object.fixture:setFriction(1)
+    object.fixture:setFriction(DEFAULT_FRICTION)
     object.fixture:setCategory(CATEGORY_STATIC)
     return object
 end
@@ -326,19 +351,13 @@ local function createWorldBounds()
     Objects.left_wall = createStatic((1920 / 2) + 100, 0, 40, 5000)
 end
 
-local function killBird(source)
-    Objects.bird.state.dead = true
-    setDeathReason(source)
-    setScore()
-end
-
 local function createBird()
     local bird_size = 10
     Objects.bird = {}
     Objects.bird.body = love.physics.newBody(World, -275, -516, "dynamic")
     Objects.bird.shape = love.physics.newCircleShape(bird_size)
     Objects.bird.fixture = love.physics.newFixture(Objects.bird.body, Objects.bird.shape)
-    Objects.bird.fixture:setFriction(1)
+    Objects.bird.fixture:setFriction(DEFAULT_FRICTION)
     Objects.bird.fixture:setCategory(CATEGORY_BIRD)
     Objects.bird.body:setMassData(0, 0, DEFAULT_BIRD_MASS, DEFAULT_BIRD_INERTIA)
     Objects.bird.state = {
@@ -347,28 +366,27 @@ local function createBird()
         on_ground = false,
         dead = false,
         controls = {up = false, down = false, left = false, right = false, rise = false},
-        carrying = 0
+        carrying = 0,
+        calories = 60,
+        expended_calories = 0
     }
 end
 
 local function leaveKernelsInNest()
-    Score.collected = Score.collected + Objects.bird.state.carrying
-    Objects.bird.state.carrying = 0
-    -- XXX This is ugly, but I don't know really how to do this correctly
-    -- as we are not allowed to modify physics while in world callbacks
-    -- Should we emit some event instead? Is there built in utilities for that? No idea
-    Objects.bird.should_reset_mass = true
+    if Objects.bird.state.carrying > 0 then
+        Objects.bird.state.calories = Objects.bird.state.calories + KERNEL_CALORIE_WORTH
+        Score.collected = Score.collected + Objects.bird.state.carrying - 1
+        Objects.bird.state.carrying = 0
+        -- XXX This is ugly, but I don't know really how to do this correctly
+        -- as we are not allowed to modify physics while in world callbacks
+        -- Should we emit some event instead? Is there built in utilities for that? No idea
+        Objects.bird.should_reset_mass = true
+    end
 end
 
 local function pickingUpKernel(kernel)
-    print("Picking up kernel", kernel)
     local kernelMass = kernel.body:getMass()
-    print("kernel", kernelMass)
     local birdMass = Objects.bird.body:getMass()
-    print("bird", birdMass)
-    -- Objects.bird.body:setMass(kernelMass + birdMass)
-    -- print("new bird", Objects.bird.body:getMass())
-
     Objects.bird.state.carrying = Objects.bird.state.carrying + 1
 
     -- XXX this is ugly but must work for now
@@ -430,7 +448,7 @@ local function initGameWorld()
         local aCat = a:getCategory()
         local bCat = b:getCategory()
         if aCat == CATEGORY_STATIC and bCat == CATEGORY_BIRD then
-            print("Bird takes off from ground!")
+            print("Bird take off!")
             Objects.bird.state.on_ground = false
         end
     end
@@ -549,6 +567,12 @@ function love.load()
         shareScoreButton.text = "Copied to clipboard!"
     end
     table.insert(game_over_menu, shareScoreButton)
+
+    local deathReasonHint = newMenuText("", FontSmall, WHITE, nil)
+    deathReasonHint.updateFn = function()
+        deathReasonHint.text = Score.hint
+    end
+    table.insert(game_over_menu, deathReasonHint)
     table.insert(
         game_over_menu,
         newMenuButton(
@@ -577,10 +601,7 @@ local function updateMain(dt)
     end
 end
 
-local function updateBird(bird)
-    -- TODO update calories
-    -- if calories < 0 kill Bird
-
+local function updateBird(bird, dt)
     if bird.should_reset_mass then
         bird.body:setMass(DEFAULT_BIRD_MASS)
         bird.should_reset_mass = false
@@ -600,21 +621,29 @@ local function updateBird(bird)
     local right = bird.state.controls.right
     local rise = bird.state.controls.rise
 
+    local FLY_Y_FORCE = 5400
+    local FLY_X_FORCE = 2100
+
+    local FLY_X_INERTIA = 600
+
+    local JUMP_Y_IMPULSE = 8
+    local JUMP_X_IMPULSE = 2
+
     local xv, yv = bird.body:getLinearVelocity()
     if up then
         bird.state.flapping = true
         if rise then
             if yv > -300 then
-                bird.body:applyForce(0, -90)
+                bird.body:applyForce(0, -FLY_Y_FORCE * dt)
             end
         elseif bird.state.on_ground then
             -- do nothing, we be perching
         elseif down then
             if yv > 200 then
-                bird.body:applyForce(0, -90)
+                bird.body:applyForce(0, -FLY_Y_FORCE * dt)
             end
         elseif yv > 0 then
-            bird.body:applyForce(0, -90)
+            bird.body:applyForce(0, -FLY_Y_FORCE * dt)
         end
     else
         bird.state.flapping = false
@@ -622,35 +651,53 @@ local function updateBird(bird)
 
     if right then
         if bird.state.flapping and xv < 300 then
-            bird.body:applyForce(35, 0)
+            bird.body:applyForce(FLY_X_FORCE * dt, 0)
         end
         bird.state.facing_left = false
     else
         if bird.state.flapping and xv < -10 then
-            bird.body:applyForce(10, 0)
+            bird.body:applyForce(FLY_X_INERTIA * dt, 0)
         end
     end
 
     if left then
         if bird.state.flapping and xv > -300 then
-            bird.body:applyForce(-35, 0)
+            bird.body:applyForce(-FLY_X_FORCE * dt, 0)
         end
         bird.state.facing_left = true
     else
         if bird.state.flapping and xv > 10 then
-            bird.body:applyForce(-10, 0)
+            bird.body:applyForce(-FLY_X_INERTIA * dt, 0)
         end
     end
 
     if bird.state.on_ground and rise then
         if bird.state.flapping then
-            bird.body:applyLinearImpulse(0, -8)
+            bird.body:applyLinearImpulse(0, -JUMP_Y_IMPULSE)
         elseif bird.state.facing_left then
-            bird.body:applyLinearImpulse(-2, -8)
+            bird.body:applyLinearImpulse(-JUMP_X_IMPULSE, -JUMP_Y_IMPULSE)
         else
-            bird.body:applyLinearImpulse(2, -8)
+            bird.body:applyLinearImpulse(JUMP_X_IMPULSE, -JUMP_Y_IMPULSE)
         end
+        bird.state.expended_calories = bird.state.expended_calories - 0.1
         bird.state.on_ground = false
+    end
+
+    if not bird.state.dead then
+        if bird.state.controls.up then
+            if bird.state.controls.rise then
+                bird.state.expended_calories = bird.state.expended_calories - (dt * 2)
+            elseif bird.state.controls.down then
+                bird.state.expended_calories = bird.state.expended_calories - (dt / 2)
+            else
+                bird.state.expended_calories = bird.state.expended_calories - dt
+            end
+        end
+
+        bird.state.expended_calories = bird.state.expended_calories - dt
+        if (bird.state.calories + bird.state.expended_calories) < 0 then
+            killBird(STARVED_TO_DEATH)
+        end
     end
 end
 
@@ -697,7 +744,7 @@ local function updateGame(dt)
     end
 
     updateBirdControlsFromPlayerInput(Objects.bird)
-    updateBird(Objects.bird)
+    updateBird(Objects.bird, dt)
 
     for _, prop in ipairs(BackgroundProps) do
         updateProp(prop, dt)
@@ -709,8 +756,6 @@ local function updateGame(dt)
 
     if STATE == GAME_RUNNING and Objects.bird.state.dead then
         STATE = GAME_OVER
-        -- TODO store wheat score
-        Score.time = TimeAlive
         updateMenu(game_over_menu)
     end
 end
@@ -753,22 +798,23 @@ local function drawMenu(menu)
     local item_height = 55
     local item_height_with_spacing = item_height + 30
     local menu_height = item_height_with_spacing * #menu
-    local menu_width = 300
+    local button_width = 300
+    local text_width = 600
     for i, menu_item in ipairs(menu) do
-        local x = (window_width / 2) - (menu_width / 2)
+        local x = (window_width / 2) - (button_width / 2)
         local y = (window_height / 2) - (menu_height / 2) + ((i - 1) * item_height_with_spacing)
 
         if menu_item.type == "button" then
             local mouseX, mouseY = love.mouse.getPosition()
             local highlighted =
-                mouseX >= x and mouseX <= (x + menu_width) and mouseY >= y and mouseY <= (y + item_height)
+                mouseX >= x and mouseX <= (x + button_width) and mouseY >= y and mouseY <= (y + item_height)
 
             if highlighted then
                 love.graphics.setColor(unpack(highlight_color(menu_item.buttonColor)))
             else
                 love.graphics.setColor(unpack(menu_item.buttonColor))
             end
-            love.graphics.rectangle("fill", x, y, menu_width, item_height)
+            love.graphics.rectangle("fill", x, y, button_width, item_height)
 
             if highlighted and not menu_item.pressed and love.mouse.isDown(1) then
                 menu_item.fn()
@@ -777,13 +823,14 @@ local function drawMenu(menu)
         end
 
         love.graphics.setColor(unpack(menu_item.textColor))
-        local textHeight = menu_item.font:getHeight(menu_item.text)
+        local text_height = menu_item.font:getHeight(menu_item.text)
+        local text_x = (window_width / 2) - (text_width / 2)
         love.graphics.printf(
             menu_item.text,
             menu_item.font,
-            math.floor(x),
-            math.floor(y + (item_height / 2) - (textHeight / 2)),
-            menu_width,
+            math.floor(text_x),
+            math.floor(y + (item_height / 2) - (text_height / 2)),
+            text_width,
             "center"
         )
     end
@@ -809,7 +856,7 @@ local function drawBird(bird, x, y)
     love.graphics.push()
     love.graphics.translate(x, y)
 
-    if bird.carrying > 0 then
+    if not bird.dead and bird.carrying > 0 then
         love.graphics.setColor(unpack(WHEAT_COLOR))
         love.graphics.printf(tostring(bird.carrying), FontMini, -25, -25, 50, "center")
     end
@@ -889,10 +936,23 @@ local function drawNest()
     love.graphics.setColor(unpack(BROWN_GRAY))
     love.graphics.polygon("fill", Objects.nest_basement.body:getWorldPoints(Objects.nest_basement.shape:getPoints()))
 
+    local x1, y1 = Objects.nest_surface.body:getPosition()
     if Score.collected > 0 then
-        local x1, y1 = Objects.nest_surface.body:getPosition()
         love.graphics.setColor(unpack(WHEAT_COLOR))
         love.graphics.printf(tostring(Score.collected), FontMini, x1 - 100 - 30, y1 - 5, 100, "right")
+    end
+
+    local caloriesInSystem = Objects.bird.state.calories + Objects.bird.state.expended_calories
+    if not Objects.bird.state.dead and caloriesInSystem < 30 then
+        love.graphics.setColor(unpack(RED))
+        love.graphics.printf(
+            string.format("You have %s calories left", math.floor(caloriesInSystem + 1)),
+            FontMini,
+            x1 - 100 + 50,
+            y1 + 20,
+            100,
+            "center"
+        )
     end
 end
 
