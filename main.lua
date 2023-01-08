@@ -53,6 +53,8 @@ local BLUE = {0, 0, 1}
 
 CyclicTime = 0
 Time = 0
+KernelTimer = 0
+KERNEL_TIMER_COOLDOWN = 2 -- 0.2
 
 local DEFAULT_MAX_STALK_BEND = 0.05
 local DEFAULT_STALK_BEND_SPEED = 1
@@ -272,6 +274,18 @@ local function destroyWorld()
     Props = {}
 end
 
+local function createKernel()
+    local object = {}
+    local create_area_width = 1500
+    local x = (-create_area_width / 2) + create_area_width * math.random()
+    local y = -130
+    object.body = love.physics.newBody(World, x, y, "dynamic")
+    object.shape = love.physics.newRectangleShape(5, 5)
+    object.fixture = love.physics.newFixture(object.body, object.shape)
+    object.color = mutate_color(WHEAT_COLOR, 0.2)
+    return object
+end
+
 local function createStatic(x, y, width, height)
     local object = {}
     object.body = love.physics.newBody(World, x, y)
@@ -296,6 +310,7 @@ end
 local function initGameWorld()
     destroyWorld()
     Time = 0
+    KernelTimer = 0
     World = love.physics.newWorld(0, 981, true)
     local window_width = love.graphics.getWidth()
     local window_height = love.graphics.getHeight()
@@ -326,7 +341,6 @@ local function initGameWorld()
             print("Bird on ground!")
             Objects.bird.state.on_ground = true
             local vx, vy = Objects.bird.body:getLinearVelocity()
-            print(math.abs(vy))
             if math.abs(vy) > 850 then
                 killBird(FELL_FROM_HIGH_PLACE)
             end
@@ -370,7 +384,6 @@ function love.load()
             nil,
             BROWN_GRAY,
             function()
-                print("Changed state to init")
                 STATE = GAME_INIT
             end
         )
@@ -543,8 +556,6 @@ local function updateBird(bird)
             bird.body:applyLinearImpulse(2, -8)
         end
         bird.state.on_ground = false
-
-        print("Applied jump impulse")
     end
 end
 
@@ -595,6 +606,16 @@ local function updateGame(dt)
     --     Objects.nest.body:setX(Objects.nest.body:getX() + dt * 100)
     -- end
 
+    if Objects.kernels == nil then
+        Objects.kernels = {}
+    end
+    if KernelTimer > KERNEL_TIMER_COOLDOWN then
+        KernelTimer = KernelTimer - KERNEL_TIMER_COOLDOWN
+        if #Objects.kernels < 20 then
+            table.insert(Objects.kernels, createKernel())
+        end
+    end
+
     updateBirdControlsFromPlayerInput(Objects.bird)
     updateBird(Objects.bird)
 
@@ -630,8 +651,9 @@ function love.update(dt)
     end
 
     Time = Time + dt
-    if Time > math.pi then
+    if Time > 1 then
         Time = Time - 1
+        -- TODO remove these
         if STATE == GAME_RUNNING and Objects.bird then
             print("Bird is at", Objects.bird.body:getPosition())
         end
@@ -645,6 +667,8 @@ function love.update(dt)
             print("Nest top is at", Objects.nest_ground.body:getPosition())
         end
     end
+
+    KernelTimer = KernelTimer + dt
 
     if STATE == GAME_RUNNING or STATE == GAME_OVER then
         updateGame(dt)
@@ -811,6 +835,13 @@ local function drawObjects()
     -- love.graphics.polygon("fill", Objects.right_wall.body:getWorldPoints(Objects.right_wall.shape:getPoints()))
 
     drawBird(Objects.bird.state, Objects.bird.body:getPosition())
+
+    if Objects.kernels then
+        for _, kernel in ipairs(Objects.kernels) do
+            love.graphics.setColor(unpack(kernel.color))
+            love.graphics.polygon("fill", kernel.body:getWorldPoints(kernel.shape:getPoints()))
+        end
+    end
 
     love.graphics.pop()
 end
