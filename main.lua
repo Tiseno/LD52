@@ -379,7 +379,10 @@ local function createBird()
     }
 end
 
+local sounds = {}
+
 local function leaveKernelsInNest()
+    -- sounds.collision:play()
     if Objects.bird.state.carrying > 0 then
         Objects.bird.state.calories = Objects.bird.state.calories + KERNEL_CALORIE_WORTH
         Score.collected = Score.collected + Objects.bird.state.carrying - 1
@@ -392,6 +395,7 @@ local function leaveKernelsInNest()
 end
 
 local function pickingUpKernel(kernel)
+    sounds.tick:play()
     local kernelMass = kernel.body:getMass()
     local birdMass = Objects.bird.body:getMass()
     Objects.bird.state.carrying = Objects.bird.state.carrying + 1
@@ -479,11 +483,14 @@ local main_menu = {}
 local pause_menu = {}
 local game_over_menu = {}
 
-local sounds = {}
-
 function love.load()
-    sounds.croak_sound = love.audio.newSource("croak.wav", "static")
-    sounds.croak_sound:play()
+    sounds.croak = love.audio.newSource("croak.wav", "static")
+    sounds.tick = love.audio.newSource("tick.wav", "static")
+    sounds.tick:setVolume(5)
+    sounds.small_swosh = love.audio.newSource("small_swosh.wav", "static")
+    sounds.small_swosh:setVolume(0.15)
+
+    sounds.croak:play()
 
     addWheat(MainMenuProps, darken_color(WHEAT_COLOR), 0)
     addWheat(MainMenuProps, WHEAT_COLOR, 0.1)
@@ -676,6 +683,7 @@ local function updateBird(bird, dt)
         if bird.state.flapping and xv < 300 then
             bird.body:applyForce(FLY_X_FORCE * dt, 0)
         elseif bird.state.on_ground then
+            sounds.small_swosh:play()
             bird.body:applyLinearImpulse(RUN_X_IMPULSE, -RUN_Y_IMPULSE)
             bird.state.expended_calories = bird.state.expended_calories - 0.01
             bird.state.on_ground = false
@@ -691,6 +699,7 @@ local function updateBird(bird, dt)
         if bird.state.flapping and xv > -300 then
             bird.body:applyForce(-FLY_X_FORCE * dt, 0)
         elseif bird.state.on_ground then
+            sounds.small_swosh:play()
             bird.body:applyLinearImpulse(-RUN_X_IMPULSE, -RUN_Y_IMPULSE)
             bird.state.expended_calories = bird.state.expended_calories - 0.01
             bird.state.on_ground = false
@@ -704,6 +713,7 @@ local function updateBird(bird, dt)
     end
 
     if bird.state.on_ground and rise then
+        sounds.small_swosh:play()
         if bird.state.flapping then
             bird.body:applyLinearImpulse(0, -JUMP_Y_IMPULSE)
         elseif bird.state.facing_left then
