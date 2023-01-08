@@ -333,7 +333,8 @@ local function initGameWorld()
         flapping = false,
         on_ground = false,
         dead = false,
-        controls = {up = false, down = false, left = false, right = false, rise = false}
+        controls = {up = false, down = false, left = false, right = false, rise = false},
+        carrying = 5
     }
 
     local function birdBeginsContactWithGround(a, b, coll)
@@ -369,6 +370,7 @@ function love.load()
     addWheat(MainMenuProps, darken_color(WHEAT_COLOR), 0)
     addWheat(MainMenuProps, WHEAT_COLOR, 0.1)
 
+    FontMini = love.graphics.newFont(12)
     FontSmall = love.graphics.newFont(24)
     FontLarge = love.graphics.newFont(32)
     love.physics.setMeter(100)
@@ -494,6 +496,10 @@ local function updateMain(dt)
         updateProp(prop, dt)
     end
 end
+local function pickingUpKernel()
+    -- TODO change mass of bird
+    Objects.bird.state.carrying = Objects.bird.state.carrying + 1
+end
 
 local function updateBird(bird)
     -- TODO update calories
@@ -567,6 +573,8 @@ local function updateBirdControlsFromPlayerInput(bird)
         bird.state.controls.right = false
         bird.state.controls.rise = false
     else
+        -- bird.state.controls.up = love.keyboard.isDown("space") or love.keyboard.isDown("lshift")
+        -- bird.state.controls.rise = love.keyboard.isDown("w") or love.keyboard.isDown("k")
         bird.state.controls.left = love.keyboard.isDown("a") or love.keyboard.isDown("h")
         bird.state.controls.down =
             love.keyboard.isDown("s") or love.keyboard.isDown("j") or love.keyboard.isDown("lctrl") or
@@ -575,9 +583,6 @@ local function updateBirdControlsFromPlayerInput(bird)
 
         bird.state.controls.up = love.keyboard.isDown("w") or love.keyboard.isDown("k")
         bird.state.controls.rise = love.keyboard.isDown("space") or love.keyboard.isDown("lshift")
-
-        -- bird.state.controls.up = love.keyboard.isDown("space") or love.keyboard.isDown("lshift")
-        -- bird.state.controls.rise = love.keyboard.isDown("w") or love.keyboard.isDown("k")
     end
 end
 
@@ -745,6 +750,12 @@ end
 local function drawBird(bird, x, y)
     love.graphics.push()
     love.graphics.translate(x, y)
+
+    if bird.carrying > 0 then
+        love.graphics.setColor(unpack(WHEAT_COLOR))
+        love.graphics.print(tostring(bird.carrying), FontMini, -3, -25)
+    end
+
     if bird.facing_left then
         love.graphics.scale(-1, 1)
     end
