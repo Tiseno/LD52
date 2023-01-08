@@ -99,6 +99,17 @@ local function random_tractor_verb()
     return reasons[1 + math.floor(math.random() * #reasons)]
 end
 
+local function random_falling_terms()
+    local reasons = {
+        "fell from a high place and died",
+        "apparently forgot how to fly",
+        "failed the bird exam",
+        "malfunctioned mid air",
+        "forgot how to flap the wings"
+    }
+    return reasons[1 + math.floor(math.random() * #reasons)]
+end
+
 local function format_death_reason(death_reason)
     if death_reason == STARVED_TO_DEATH then
         return "starved to death"
@@ -107,10 +118,14 @@ local function format_death_reason(death_reason)
     elseif death_reason == MANGLED_BY_TRACTOR then
         return string.format("got %s by a tractor", random_tractor_verb())
     elseif death_reason == FELL_FROM_HIGH_PLACE then
-        return "fell from a high place and died"
+        return random_falling_terms()
     else
         return "died"
     end
+end
+
+local function setDeathReason(source)
+    Score.death_reason = format_death_reason(source)
 end
 
 function love.keypressed(key, scancode, isrepeat)
@@ -125,22 +140,22 @@ function love.keypressed(key, scancode, isrepeat)
     -- TODO remove all these
     if key == "5" then
         Objects.bird.state.dead = true
-        Score.death_reason = MANGLED_BY_TRACTOR
+        setDeathReason(MANGLED_BY_TRACTOR)
     end
 
     if key == "6" then
         Objects.bird.state.dead = true
-        Score.death_reason = STARVED_TO_DEATH
+        setDeathReason(STARVED_TO_DEATH)
     end
 
     if key == "7" then
         Objects.bird.state.dead = true
-        Score.death_reason = FELL_FROM_HIGH_PLACE
+        setDeathReason(FELL_FROM_HIGH_PLACE)
     end
 
     if key == "8" then
         Objects.bird.state.dead = true
-        Score.death_reason = EATEN_BY_FROG
+        setDeathReason(EATEN_BY_FROG)
     end
 
     if key == "0" then
@@ -272,6 +287,11 @@ local function initNest(x, y)
     Objects.nest_basement = createStatic(x, y + 8, 30, 4)
 end
 
+local function killBird(source)
+    Objects.bird.state.dead = true
+    setDeathReason(source)
+end
+
 -- https://love2d.org/wiki/Tutorial:Physics
 local function initGameWorld()
     destroyWorld()
@@ -282,23 +302,9 @@ local function initGameWorld()
 
     initNest(-270, -500)
 
-    Objects.ground = {}
-    Objects.ground.body = love.physics.newBody(World, 0, 20)
-    Objects.ground.shape = love.physics.newRectangleShape(5000, 40)
-    Objects.ground.fixture = love.physics.newFixture(Objects.ground.body, Objects.ground.shape)
-    Objects.ground.fixture:setFriction(1)
-
-    Objects.left_wall = {}
-    Objects.left_wall.body = love.physics.newBody(World, -(1920 / 2) - 100, 0)
-    Objects.left_wall.shape = love.physics.newRectangleShape(40, 5000)
-    Objects.left_wall.fixture = love.physics.newFixture(Objects.left_wall.body, Objects.left_wall.shape)
-    Objects.left_wall.fixture:setFriction(1)
-
-    Objects.right_wall = {}
-    Objects.right_wall.body = love.physics.newBody(World, (1920 / 2) + 100, 0)
-    Objects.right_wall.shape = love.physics.newRectangleShape(40, 5000)
-    Objects.right_wall.fixture = love.physics.newFixture(Objects.right_wall.body, Objects.right_wall.shape)
-    Objects.right_wall.fixture:setFriction(1)
+    Objects.ground = createStatic(0, 20, 5000, 40)
+    Objects.left_wall = createStatic(-(1920 / 2) - 100, 0, 40, 5000)
+    Objects.left_wall = createStatic((1920 / 2) + 100, 0, 40, 5000)
 
     local bird_size = 10
     Objects.bird = {}
@@ -319,6 +325,11 @@ local function initGameWorld()
         if b == Objects.bird.fixture then
             print("Bird on ground!")
             Objects.bird.state.on_ground = true
+            local vx, vy = Objects.bird.body:getLinearVelocity()
+            print(math.abs(vy))
+            if math.abs(vy) > 850 then
+                killBird(FELL_FROM_HIGH_PLACE)
+            end
         end
     end
 
@@ -410,7 +421,7 @@ function love.load()
     table.insert(game_over_menu, newMenuText("Game Over", FontLarge, WHITE, nil))
     local deathReason = newMenuText("You died", FontSmall, WHITE, nil)
     deathReason.updateFn = function()
-        deathReason.text = string.format("You %s", format_death_reason(Score.death_reason))
+        deathReason.text = string.format("You %s", Score.death_reason)
     end
     table.insert(game_over_menu, deathReason)
 
@@ -436,7 +447,7 @@ function love.load()
                 "I collected %i wheat, survived for %i seconds, and then I %s, for a total score of %i!",
                 math.floor(Score.collected),
                 math.floor(Score.time),
-                format_death_reason(Score.death_reason),
+                Score.death_reason,
                 math.floor(Score.score)
             )
         )
@@ -469,10 +480,6 @@ local function updateMain(dt)
     for _, prop in ipairs(MainMenuProps) do
         updateProp(prop, dt)
     end
-end
-
-local function killBird(source)
-    Score.death_reason = EATEN_BY_FROG
 end
 
 local function updateBird(bird)
@@ -549,11 +556,17 @@ local function updateBirdControlsFromPlayerInput(bird)
         bird.state.controls.right = false
         bird.state.controls.rise = false
     else
-        bird.state.controls.up = love.keyboard.isDown("w") or love.keyboard.isDown("k")
         bird.state.controls.left = love.keyboard.isDown("a") or love.keyboard.isDown("h")
-        bird.state.controls.down = love.keyboard.isDown("s") or love.keyboard.isDown("j")
+        bird.state.controls.down =
+            love.keyboard.isDown("s") or love.keyboard.isDown("j") or love.keyboard.isDown("lctrl") or
+            love.keyboard.isDown("rctrl")
         bird.state.controls.right = love.keyboard.isDown("d") or love.keyboard.isDown("l")
-        bird.state.controls.rise = love.keyboard.isDown("space")
+
+        bird.state.controls.up = love.keyboard.isDown("w") or love.keyboard.isDown("k")
+        bird.state.controls.rise = love.keyboard.isDown("space") or love.keyboard.isDown("lshift")
+
+        -- bird.state.controls.up = love.keyboard.isDown("space") or love.keyboard.isDown("lshift")
+        -- bird.state.controls.rise = love.keyboard.isDown("w") or love.keyboard.isDown("k")
     end
 end
 
@@ -569,18 +582,18 @@ local function updateGame(dt)
     World:update(dt)
 
     -- TODO remove
-    if love.keyboard.isDown("up") then
-        Objects.nest.body:setY(Objects.nest.body:getY() - dt * 100)
-    end
-    if love.keyboard.isDown("down") then
-        Objects.nest.body:setY(Objects.nest.body:getY() + dt * 100)
-    end
-    if love.keyboard.isDown("left") then
-        Objects.nest.body:setX(Objects.nest.body:getX() - dt * 100)
-    end
-    if love.keyboard.isDown("right") then
-        Objects.nest.body:setX(Objects.nest.body:getX() + dt * 100)
-    end
+    -- if love.keyboard.isDown("up") then
+    --     Objects.nest.body:setY(Objects.nest.body:getY() - dt * 100)
+    -- end
+    -- if love.keyboard.isDown("down") then
+    --     Objects.nest.body:setY(Objects.nest.body:getY() + dt * 100)
+    -- end
+    -- if love.keyboard.isDown("left") then
+    --     Objects.nest.body:setX(Objects.nest.body:getX() - dt * 100)
+    -- end
+    -- if love.keyboard.isDown("right") then
+    --     Objects.nest.body:setX(Objects.nest.body:getX() + dt * 100)
+    -- end
 
     updateBirdControlsFromPlayerInput(Objects.bird)
     updateBird(Objects.bird)
@@ -722,16 +735,16 @@ local function drawBird(bird, x, y)
     love.graphics.rectangle("fill", 4, 0, 9, 5)
 
     if bird.dead then
+        -- love.graphics.rectangle("fill", 3, -6, 3, 3)
+        -- love.graphics.rectangle("fill", -1, -2, 3, 3)
+        -- love.graphics.rectangle("fill", 1, -4, 3, 3)
+        -- love.graphics.rectangle("fill", 3, -2, 3, 3)
+        -- love.graphics.rectangle("fill", -1, -6, 3, 3)
         love.graphics.setColor(unpack(RED))
-        love.graphics.rectangle("fill", 3, -6, 3, 3)
-        love.graphics.rectangle("fill", -1, -2, 3, 3)
-        love.graphics.rectangle("fill", 1, -4, 3, 3)
-        love.graphics.rectangle("fill", 3, -2, 3, 3)
-        love.graphics.rectangle("fill", -1, -6, 3, 3)
     else
         love.graphics.setColor(unpack(BLACK))
-        love.graphics.rectangle("fill", 1, -4, 3, 3)
     end
+    love.graphics.rectangle("fill", 1, -4, 3, 3)
 
     love.graphics.setColor(unpack(DARK_GRAY))
     love.graphics.rectangle("fill", -4, 9, 3, 3)
