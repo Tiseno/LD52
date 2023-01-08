@@ -270,7 +270,7 @@ local function newWheat(x, y, baseColor, mutation)
 end
 
 local function addWheat(list, color, mut)
-    local n = 300
+    local n = 274
     local spacing = 5
     for i = 0, n, 1 do
         table.insert(list, newWheat(-(spacing * n / 2) + (i * spacing) - 2 + math.random() * 4, 0, color, mut))
@@ -289,11 +289,11 @@ end
 
 local function createKernel()
     local object = {}
-    local create_area_width = 1500
+    local create_area_width = 1366
     local x = (-create_area_width / 2) + create_area_width * math.random()
     local y = -130
-    object.body = love.physics.newBody(World, 50, -400, "dynamic")
-    -- object.body = love.physics.newBody(World, x, y, "dynamic") -- TODO
+    -- object.body = love.physics.newBody(World, 50, -400, "dynamic")
+    object.body = love.physics.newBody(World, x, y, "dynamic")
     object.shape = love.physics.newRectangleShape(3, 8)
     object.fixture = love.physics.newFixture(object.body, object.shape)
     object.fixture:setCategory(CATEGORY_KERNEL)
@@ -727,7 +727,7 @@ local function drawMenu(menu)
     local menu_width = 300
     for i, menu_item in ipairs(menu) do
         local x = (window_width / 2) - (menu_width / 2)
-        local y = (window_height / 3) - (menu_height / 2) + ((i - 1) * item_height_with_spacing)
+        local y = (window_height / 2) - (menu_height / 2) + ((i - 1) * item_height_with_spacing)
 
         if menu_item.type == "button" then
             local mouseX, mouseY = love.mouse.getPosition()
