@@ -70,13 +70,42 @@ local EATEN_BY_FROG = 1
 local MANGLED_BY_TRACTOR = 2
 local FELL_FROM_HIGH_PLACE = 3
 
+local function random_frog_verb()
+    local reasons = {
+        "assassinated",
+        "consumed",
+        "devoured",
+        "eaten",
+        "killed",
+        "sent to the shadow realm",
+        "smacked",
+        "wasted",
+        "whipped"
+    }
+    return reasons[1 + math.floor(math.random() * #reasons)]
+end
+
+local function random_tractor_verb()
+    local reasons = {
+        "crushed",
+        "destroyed",
+        "flattened",
+        "killed",
+        "mangled",
+        "minced",
+        "ran over",
+        "stomped"
+    }
+    return reasons[1 + math.floor(math.random() * #reasons)]
+end
+
 local function format_death_reason(death_reason)
     if death_reason == STARVED_TO_DEATH then
         return "starved to death"
     elseif death_reason == EATEN_BY_FROG then
-        return "got eaten by a frog"
+        return string.format("got %s by a frog", random_frog_verb())
     elseif death_reason == MANGLED_BY_TRACTOR then
-        return "got mangled by a tractor"
+        return string.format("got %s by a tractor", random_tractor_verb())
     elseif death_reason == FELL_FROM_HIGH_PLACE then
         return "fell from a high place and died"
     else
@@ -302,6 +331,7 @@ function love.load()
     love.physics.setMeter(100)
 
     table.insert(main_menu, newMenuText("Wheat", FontLarge, WHITE, nil))
+    table.insert(main_menu, newMenuText("A game about collecting wheat", FontSmall, WHITE, nil))
     table.insert(
         main_menu,
         newMenuButton(
