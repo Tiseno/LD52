@@ -54,7 +54,7 @@ local BLUE = {0, 0, 1}
 CyclicTime = 0
 Time = 0
 KernelTimer = 0
-KERNEL_TIMER_COOLDOWN = 2 -- 0.2
+KERNEL_TIMER_COOLDOWN = 0.2 -- 2 -- TODO
 
 local DEFAULT_MAX_STALK_BEND = 0.05
 local DEFAULT_STALK_BEND_SPEED = 1
@@ -115,7 +115,8 @@ local function random_falling_terms()
         "apparently forgot how to fly",
         "failed the bird exam",
         "malfunctioned mid air",
-        "forgot how to flap the wings"
+        "got a cramp",
+        "stopped pressing up"
     }
     return reasons[1 + math.floor(math.random() * #reasons)]
 end
@@ -287,27 +288,28 @@ local function createKernel()
     local create_area_width = 1500
     local x = (-create_area_width / 2) + create_area_width * math.random()
     local y = -130
-    object.body = love.physics.newBody(World, x, y, "dynamic")
+    object.body = love.physics.newBody(World, 50, -400, "dynamic")
+    -- object.body = love.physics.newBody(World, x, y, "dynamic") -- TODO
     object.shape = love.physics.newRectangleShape(3, 8)
     object.fixture = love.physics.newFixture(object.body, object.shape)
-    object.fixture:setCategory(CATEGORY_DEFAULT, CATEGORY_KERNEL)
+    object.fixture:setCategory(CATEGORY_KERNEL)
     object.color = mutate_color(WHEAT_COLOR, 0.2)
     object.body:applyAngularImpulse(300)
     return object
 end
 
-local function createStatic(x, y, width, height)
+local function createStatic(x, y, width, height, secondCat)
     local object = {}
     object.body = love.physics.newBody(World, x, y)
     object.shape = love.physics.newRectangleShape(width, height)
     object.fixture = love.physics.newFixture(object.body, object.shape)
     object.fixture:setFriction(1)
-    object.fixture:setCategory(CATEGORY_DEFAULT, CATEGORY_STATIC)
+    object.fixture:setCategory(CATEGORY_STATIC)
     return object
 end
 
 local function createNest(x, y)
-    Objects.nest_ground = createStatic(x, y - 4, 38, 2)
+    Objects.nest_surface = createStatic(x, y - 4, 38, 2)
     Objects.nest = createStatic(x, y + 2, 50, 10)
     Objects.nest_basement = createStatic(x, y + 8, 30, 4)
 end
@@ -330,7 +332,7 @@ local function createBird()
     Objects.bird.shape = love.physics.newCircleShape(bird_size)
     Objects.bird.fixture = love.physics.newFixture(Objects.bird.body, Objects.bird.shape)
     Objects.bird.fixture:setFriction(1)
-    Objects.bird.fixture:setCategory(CATEGORY_DEFAULT, CATEGORY_BIRD)
+    Objects.bird.fixture:setCategory(CATEGORY_BIRD)
     Objects.bird.body:setMassData(0, 0, DEFAULT_BIRD_MASS, DEFAULT_BIRD_INERTIA)
     Objects.bird.state = {
         facing_left = false,
@@ -338,8 +340,19 @@ local function createBird()
         on_ground = false,
         dead = false,
         controls = {up = false, down = false, left = false, right = false, rise = false},
-        carrying = 5
+        carrying = 0
     }
+end
+
+local function leaveKernelsInNest()
+    -- TODO change mass of bird
+    Score.collected = Score.collected + Objects.bird.state.carrying
+    Objects.bird.state.carrying = 0
+end
+
+local function pickingUpKernel()
+    -- TODO change mass of bird
+    Objects.bird.state.carrying = Objects.bird.state.carrying + 1
 end
 
 -- https://love2d.org/wiki/Tutorial:Physics
@@ -355,7 +368,9 @@ local function initGameWorld()
     createBird()
 
     local function beginContact(a, b, coll)
-        if b == Objects.bird.fixture then
+        local aCat = a:getCategory()
+        local bCat = b:getCategory()
+        if aCat == CATEGORY_STATIC and bCat == CATEGORY_BIRD then
             print("Bird on ground!")
             Objects.bird.state.on_ground = true
             local vx, vy = Objects.bird.body:getLinearVelocity()
@@ -363,11 +378,37 @@ local function initGameWorld()
                 killBird(FELL_FROM_HIGH_PLACE)
             end
         end
-        -- TODO if pickingUpKernel
+        if bCat == CATEGORY_BIRD and a == Objects.nest_surface.fixture then
+            print("Landed on nest surface")
+            leaveKernelsInNest()
+        end
+
+        if aCat == CATEGORY_KERNEL and bCat == CATEGORY_BIRD then
+            print("Picking up a kernel")
+
+            local picked_kernel_index = nil
+            local picked_kernel = nil
+            for i, kernel in ipairs(Objects.kernels) do
+                if kernel.fixture == a then
+                    picked_kernel_index = i
+                    picked_kernel = kernel
+                end
+            end
+            if picked_kernel then
+                picked_kernel.body:destroy()
+                picked_kernel.fixture:destroy()
+            end
+            if picked_kernel_index then
+                table.remove(Objects.kernels, picked_kernel_index)
+            end
+            pickingUpKernel()
+        end
     end
 
     local function endContact(a, b, coll)
-        if b == Objects.bird.fixture then
+        local aCat = a:getCategory()
+        local bCat = b:getCategory()
+        if aCat == CATEGORY_STATIC and bCat == CATEGORY_BIRD then
             print("Bird takes off from ground!")
             Objects.bird.state.on_ground = false
         end
@@ -513,11 +554,6 @@ local function updateMain(dt)
     for _, prop in ipairs(MainMenuProps) do
         updateProp(prop, dt)
     end
-end
-
-local function pickingUpKernel()
-    -- TODO change mass of bird
-    Objects.bird.state.carrying = Objects.bird.state.carrying + 1
 end
 
 local function updateBird(bird)
@@ -677,19 +713,19 @@ function love.update(dt)
     Time = Time + dt
     if Time > 1 then
         Time = Time - 1
-        -- TODO remove these
-        if STATE == GAME_RUNNING and Objects.bird then
-            print("Bird is at", Objects.bird.body:getPosition())
-        end
-        if STATE == GAME_RUNNING and Objects.nest then
-            print("Nest is at", Objects.nest.body:getPosition())
-        end
-        if STATE == GAME_RUNNING and Objects.nest_basement then
-            print("Nest basement is at", Objects.nest_basement.body:getPosition())
-        end
-        if STATE == GAME_RUNNING and Objects.nest_ground then
-            print("Nest top is at", Objects.nest_ground.body:getPosition())
-        end
+    -- TODO remove these
+    -- if STATE == GAME_RUNNING and Objects.bird then
+    --     print("Bird is at", Objects.bird.body:getPosition())
+    -- end
+    -- if STATE == GAME_RUNNING and Objects.nest then
+    --     print("Nest is at", Objects.nest.body:getPosition())
+    -- end
+    -- if STATE == GAME_RUNNING and Objects.nest_basement then
+    --     print("Nest basement is at", Objects.nest_basement.body:getPosition())
+    -- end
+    -- if STATE == GAME_RUNNING and Objects.nest_surface then
+    --     print("Nest top is at", Objects.nest_surface.body:getPosition())
+    -- end
     end
 
     KernelTimer = KernelTimer + dt
@@ -772,7 +808,7 @@ local function drawBird(bird, x, y)
 
     if bird.carrying > 0 then
         love.graphics.setColor(unpack(WHEAT_COLOR))
-        love.graphics.print(tostring(bird.carrying), FontMini, -3, -25)
+        love.graphics.printf(tostring(bird.carrying), FontMini, -25, -25, 50, "center")
     end
 
     if bird.facing_left then
@@ -842,18 +878,28 @@ local function drawMainMenuWorld()
     drawProps(MainMenuProps)
 end
 
+local function drawNest()
+    love.graphics.setColor(unpack(highlight_color(BROWN_GRAY)))
+    love.graphics.polygon("fill", Objects.nest_surface.body:getWorldPoints(Objects.nest_surface.shape:getPoints()))
+    love.graphics.setColor(unpack(BROWN_GRAY))
+    love.graphics.polygon("fill", Objects.nest.body:getWorldPoints(Objects.nest.shape:getPoints()))
+    love.graphics.setColor(unpack(BROWN_GRAY))
+    love.graphics.polygon("fill", Objects.nest_basement.body:getWorldPoints(Objects.nest_basement.shape:getPoints()))
+
+    if Score.collected > 0 then
+        local x1, y1 = Objects.nest_surface.body:getPosition()
+        love.graphics.setColor(unpack(WHEAT_COLOR))
+        love.graphics.printf(tostring(Score.collected), FontMini, x1 - 100 - 30, y1 - 5, 100, "right")
+    end
+end
+
 local function drawObjects()
     local window_width = love.graphics.getWidth()
     local window_height = love.graphics.getHeight()
     love.graphics.push()
     love.graphics.translate(window_width / 2, window_height)
 
-    love.graphics.setColor(unpack(highlight_color(BROWN_GRAY)))
-    love.graphics.polygon("fill", Objects.nest_ground.body:getWorldPoints(Objects.nest_ground.shape:getPoints()))
-    love.graphics.setColor(unpack(BROWN_GRAY))
-    love.graphics.polygon("fill", Objects.nest.body:getWorldPoints(Objects.nest.shape:getPoints()))
-    love.graphics.setColor(unpack(BROWN_GRAY))
-    love.graphics.polygon("fill", Objects.nest_basement.body:getWorldPoints(Objects.nest_basement.shape:getPoints()))
+    drawNest()
 
     love.graphics.setColor(unpack(BROWN_GRAY))
     love.graphics.polygon("fill", Objects.ground.body:getWorldPoints(Objects.ground.shape:getPoints()))
