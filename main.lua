@@ -6,7 +6,7 @@ local GAME_RUNNING = "GAME_RUNNING"
 local GAME_PAUSED = "GAME_PAUSED"
 local GAME_OVER = "GAME_OVER"
 
-local STATE = MAIN_MENU
+local STATE = GAME_INIT
 
 --https://colorpicker.me
 local function rgb(r, g, b)
@@ -122,6 +122,7 @@ function love.keypressed(key, scancode, isrepeat)
         end
     end
 
+    -- TODO remove all these
     if key == "5" then
         Objects.bird.state.dead = true
         Score.death_reason = MANGLED_BY_TRACTOR
@@ -256,6 +257,21 @@ local function destroyWorld()
     Props = {}
 end
 
+local function createStatic(x, y, width, height)
+    local object = {}
+    object.body = love.physics.newBody(World, x, y)
+    object.shape = love.physics.newRectangleShape(width, height)
+    object.fixture = love.physics.newFixture(object.body, object.shape)
+    object.fixture:setFriction(1)
+    return object
+end
+
+local function initNest(x, y)
+    Objects.nest_ground = createStatic(x, y - 4, 38, 2)
+    Objects.nest = createStatic(x, y + 2, 50, 10)
+    Objects.nest_basement = createStatic(x, y + 8, 30, 4)
+end
+
 -- https://love2d.org/wiki/Tutorial:Physics
 local function initGameWorld()
     destroyWorld()
@@ -263,6 +279,8 @@ local function initGameWorld()
     World = love.physics.newWorld(0, 981, true)
     local window_width = love.graphics.getWidth()
     local window_height = love.graphics.getHeight()
+
+    initNest(-270, -500)
 
     Objects.ground = {}
     Objects.ground.body = love.physics.newBody(World, 0, 20)
@@ -284,13 +302,13 @@ local function initGameWorld()
 
     local bird_size = 10
     Objects.bird = {}
-    Objects.bird.body = love.physics.newBody(World, 0, 0, "dynamic")
+    Objects.bird.body = love.physics.newBody(World, -275, -516, "dynamic")
     Objects.bird.shape = love.physics.newCircleShape(bird_size)
     Objects.bird.fixture = love.physics.newFixture(Objects.bird.body, Objects.bird.shape)
     Objects.bird.fixture:setFriction(1)
     Objects.bird.body:setMassData(0, 0, 0.031415928155184, 1000000000000000)
     Objects.bird.state = {
-        facing_left = true,
+        facing_left = false,
         flapping = false,
         on_ground = false,
         dead = false,
@@ -511,7 +529,7 @@ local function updateBird(bird)
 
     if bird.state.on_ground and rise then
         if bird.state.flapping then
-            bird.body:applyLinearImpulse(0, -12)
+            bird.body:applyLinearImpulse(0, -8)
         elseif bird.state.facing_left then
             bird.body:applyLinearImpulse(-2, -8)
         else
@@ -552,16 +570,16 @@ local function updateGame(dt)
 
     -- TODO remove
     if love.keyboard.isDown("up") then
-        Objects.ground.body:setY(Objects.ground.body:getY() - dt * 100)
+        Objects.nest.body:setY(Objects.nest.body:getY() - dt * 100)
     end
     if love.keyboard.isDown("down") then
-        Objects.ground.body:setY(Objects.ground.body:getY() + dt * 100)
+        Objects.nest.body:setY(Objects.nest.body:getY() + dt * 100)
     end
     if love.keyboard.isDown("left") then
-        Objects.ground.body:setX(Objects.ground.body:getX() - dt * 100)
+        Objects.nest.body:setX(Objects.nest.body:getX() - dt * 100)
     end
     if love.keyboard.isDown("right") then
-        Objects.ground.body:setX(Objects.ground.body:getX() + dt * 100)
+        Objects.nest.body:setX(Objects.nest.body:getX() + dt * 100)
     end
 
     updateBirdControlsFromPlayerInput(Objects.bird)
@@ -603,6 +621,15 @@ function love.update(dt)
         Time = Time - 1
         if STATE == GAME_RUNNING and Objects.bird then
             print("Bird is at", Objects.bird.body:getPosition())
+        end
+        if STATE == GAME_RUNNING and Objects.nest then
+            print("Nest is at", Objects.nest.body:getPosition())
+        end
+        if STATE == GAME_RUNNING and Objects.nest_basement then
+            print("Nest basement is at", Objects.nest_basement.body:getPosition())
+        end
+        if STATE == GAME_RUNNING and Objects.nest_ground then
+            print("Nest top is at", Objects.nest_ground.body:getPosition())
         end
     end
 
@@ -753,6 +780,13 @@ local function drawObjects()
     local window_height = love.graphics.getHeight()
     love.graphics.push()
     love.graphics.translate(window_width / 2, window_height)
+
+    love.graphics.setColor(unpack(highlight_color(BROWN_GRAY)))
+    love.graphics.polygon("fill", Objects.nest_ground.body:getWorldPoints(Objects.nest_ground.shape:getPoints()))
+    love.graphics.setColor(unpack(BROWN_GRAY))
+    love.graphics.polygon("fill", Objects.nest.body:getWorldPoints(Objects.nest.shape:getPoints()))
+    love.graphics.setColor(unpack(BROWN_GRAY))
+    love.graphics.polygon("fill", Objects.nest_basement.body:getWorldPoints(Objects.nest_basement.shape:getPoints()))
 
     love.graphics.setColor(unpack(BROWN_GRAY))
     love.graphics.polygon("fill", Objects.ground.body:getWorldPoints(Objects.ground.shape:getPoints()))
