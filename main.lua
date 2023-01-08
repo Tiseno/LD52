@@ -72,6 +72,14 @@ local EATEN_BY_FROG = 1
 local MANGLED_BY_TRACTOR = 2
 local FELL_FROM_HIGH_PLACE = 3
 
+local CATEGORY_DEFAULT = 1
+local CATEGORY_STATIC = 2
+local CATEGORY_BIRD = 3
+local CATEGORY_KERNEL = 4
+
+local DEFAULT_BIRD_MASS = 0.031415928155184
+local DEFAULT_BIRD_INERTIA = 1000000000000000
+
 local function random_frog_verb()
     local reasons = {
         "assassinated",
@@ -280,9 +288,11 @@ local function createKernel()
     local x = (-create_area_width / 2) + create_area_width * math.random()
     local y = -130
     object.body = love.physics.newBody(World, x, y, "dynamic")
-    object.shape = love.physics.newRectangleShape(5, 5)
+    object.shape = love.physics.newRectangleShape(3, 8)
     object.fixture = love.physics.newFixture(object.body, object.shape)
+    object.fixture:setCategory(CATEGORY_DEFAULT, CATEGORY_KERNEL)
     object.color = mutate_color(WHEAT_COLOR, 0.2)
+    object.body:applyAngularImpulse(300)
     return object
 end
 
@@ -292,13 +302,20 @@ local function createStatic(x, y, width, height)
     object.shape = love.physics.newRectangleShape(width, height)
     object.fixture = love.physics.newFixture(object.body, object.shape)
     object.fixture:setFriction(1)
+    object.fixture:setCategory(CATEGORY_DEFAULT, CATEGORY_STATIC)
     return object
 end
 
-local function initNest(x, y)
+local function createNest(x, y)
     Objects.nest_ground = createStatic(x, y - 4, 38, 2)
     Objects.nest = createStatic(x, y + 2, 50, 10)
     Objects.nest_basement = createStatic(x, y + 8, 30, 4)
+end
+
+local function createWorldBounds()
+    Objects.ground = createStatic(0, 20, 5000, 40)
+    Objects.left_wall = createStatic(-(1920 / 2) - 100, 0, 40, 5000)
+    Objects.left_wall = createStatic((1920 / 2) + 100, 0, 40, 5000)
 end
 
 local function killBird(source)
@@ -306,28 +323,15 @@ local function killBird(source)
     setDeathReason(source)
 end
 
--- https://love2d.org/wiki/Tutorial:Physics
-local function initGameWorld()
-    destroyWorld()
-    Time = 0
-    KernelTimer = 0
-    World = love.physics.newWorld(0, 981, true)
-    local window_width = love.graphics.getWidth()
-    local window_height = love.graphics.getHeight()
-
-    initNest(-270, -500)
-
-    Objects.ground = createStatic(0, 20, 5000, 40)
-    Objects.left_wall = createStatic(-(1920 / 2) - 100, 0, 40, 5000)
-    Objects.left_wall = createStatic((1920 / 2) + 100, 0, 40, 5000)
-
+local function createBird()
     local bird_size = 10
     Objects.bird = {}
     Objects.bird.body = love.physics.newBody(World, -275, -516, "dynamic")
     Objects.bird.shape = love.physics.newCircleShape(bird_size)
     Objects.bird.fixture = love.physics.newFixture(Objects.bird.body, Objects.bird.shape)
     Objects.bird.fixture:setFriction(1)
-    Objects.bird.body:setMassData(0, 0, 0.031415928155184, 1000000000000000)
+    Objects.bird.fixture:setCategory(CATEGORY_DEFAULT, CATEGORY_BIRD)
+    Objects.bird.body:setMassData(0, 0, DEFAULT_BIRD_MASS, DEFAULT_BIRD_INERTIA)
     Objects.bird.state = {
         facing_left = false,
         flapping = false,
@@ -336,8 +340,21 @@ local function initGameWorld()
         controls = {up = false, down = false, left = false, right = false, rise = false},
         carrying = 5
     }
+end
 
-    local function birdBeginsContactWithGround(a, b, coll)
+-- https://love2d.org/wiki/Tutorial:Physics
+local function initGameWorld()
+    destroyWorld()
+    Time = 0
+    KernelTimer = 0
+
+    World = love.physics.newWorld(0, 981, true)
+
+    createNest(-270, -500)
+    createWorldBounds()
+    createBird()
+
+    local function beginContact(a, b, coll)
         if b == Objects.bird.fixture then
             print("Bird on ground!")
             Objects.bird.state.on_ground = true
@@ -346,16 +363,17 @@ local function initGameWorld()
                 killBird(FELL_FROM_HIGH_PLACE)
             end
         end
+        -- TODO if pickingUpKernel
     end
 
-    local function birdEndsContactWithGround(a, b, coll)
+    local function endContact(a, b, coll)
         if b == Objects.bird.fixture then
             print("Bird takes off from ground!")
             Objects.bird.state.on_ground = false
         end
     end
 
-    World:setCallbacks(birdBeginsContactWithGround, birdEndsContactWithGround)
+    World:setCallbacks(beginContact, endContact)
 
     addWheat(BackgroundProps, darken_color(WHEAT_COLOR), 0)
     addWheat(Props, WHEAT_COLOR, 0.1)
@@ -496,6 +514,7 @@ local function updateMain(dt)
         updateProp(prop, dt)
     end
 end
+
 local function pickingUpKernel()
     -- TODO change mass of bird
     Objects.bird.state.carrying = Objects.bird.state.carrying + 1
