@@ -61,9 +61,28 @@ local stalk_bend_speed = DEFAULT_STALK_BEND_SPEED
 
 local World = {}
 local Objects = {}
-local Score = {collected = 0, time = 0, score = 0}
+local Score = {collected = 0, time = 0, score = 0, death_reason = nil}
 local BackgroundProps = {}
 local Props = {}
+
+local STARVED_TO_DEATH = 0
+local EATEN_BY_FROG = 1
+local MANGLED_BY_TRACTOR = 2
+local FELL_FROM_HIGH_PLACE = 3
+
+local function format_death_reason(death_reason)
+    if death_reason == STARVED_TO_DEATH then
+        return "starved to death"
+    elseif death_reason == EATEN_BY_FROG then
+        return "got eaten by a frog"
+    elseif death_reason == MANGLED_BY_TRACTOR then
+        return "got mangled by a tractor"
+    elseif death_reason == FELL_FROM_HIGH_PLACE then
+        return "fell from a high place and died"
+    else
+        return "died"
+    end
+end
 
 function love.keypressed(key, scancode, isrepeat)
     if key == "escape" or key == "p" or key == "pause" or key == "f10" then
@@ -72,6 +91,26 @@ function love.keypressed(key, scancode, isrepeat)
         elseif STATE == GAME_PAUSED then
             STATE = GAME_RUNNING
         end
+    end
+
+    if key == "5" then
+        Objects.bird.state.dead = true
+        Score.death_reason = MANGLED_BY_TRACTOR
+    end
+
+    if key == "6" then
+        Objects.bird.state.dead = true
+        Score.death_reason = STARVED_TO_DEATH
+    end
+
+    if key == "7" then
+        Objects.bird.state.dead = true
+        Score.death_reason = FELL_FROM_HIGH_PLACE
+    end
+
+    if key == "8" then
+        Objects.bird.state.dead = true
+        Score.death_reason = EATEN_BY_FROG
     end
 
     if key == "0" then
@@ -178,8 +217,19 @@ local function addWheat(list, color, mut)
     end
 end
 
+local function destroyWorld()
+    max_stalk_bend = DEFAULT_MAX_STALK_BEND
+    stalk_bend_speed = DEFAULT_STALK_BEND_SPEED
+    World = {}
+    Objects = {}
+    Score = {collected = 0, time = 0, score = 0, death_reason = nil}
+    BackgroundProps = {}
+    Props = {}
+end
+
 -- https://love2d.org/wiki/Tutorial:Physics
 local function initGameWorld()
+    destroyWorld()
     Time = 0
     World = love.physics.newWorld(0, 981, true)
     local window_width = love.graphics.getWidth()
@@ -236,16 +286,6 @@ local function initGameWorld()
 
     addWheat(BackgroundProps, darken_color(WHEAT_COLOR), 0)
     addWheat(Props, WHEAT_COLOR, 0.1)
-end
-
-local function destroyWorld()
-    max_stalk_bend = DEFAULT_MAX_STALK_BEND
-    stalk_bend_speed = DEFAULT_STALK_BEND_SPEED
-    World = {}
-    Objects = {}
-    Score = {collected = 0, time = 0, score = 0}
-    BackgroundProps = {}
-    Props = {}
 end
 
 local MainMenuProps = {}
@@ -320,6 +360,12 @@ function love.load()
     )
 
     table.insert(game_over_menu, newMenuText("Game Over", FontLarge, WHITE, nil))
+    local deathReason = newMenuText("You died", FontSmall, WHITE, nil)
+    deathReason.updateFn = function()
+        deathReason.text = string.format("You %s", format_death_reason(Score.death_reason))
+    end
+    table.insert(game_over_menu, deathReason)
+
     local collectedScore = newMenuText("Collected: -", FontSmall, WHITE, nil)
     collectedScore.updateFn = function()
         collectedScore.text = string.format("Collected: %i", Score.collected)
@@ -335,13 +381,14 @@ function love.load()
         totalScore.text = string.format("Score: %i", math.floor(Score.score))
     end
     table.insert(game_over_menu, totalScore)
-    local shareScoreButton = newMenuButton("Share Score", FontSmall, WHITE, nil, BROWN_GRAY)
+    local shareScoreButton = newMenuButton("Copy to clipboard", FontSmall, WHITE, nil, BROWN_GRAY)
     shareScoreButton.fn = function()
         love.system.setClipboardText(
             string.format(
-                "I Collected %i wheat, survived for %i seconds, and got a total score of %i!",
+                "I collected %i wheat, survived for %i seconds, and then I %s, for a total score of %i!",
                 math.floor(Score.collected),
                 math.floor(Score.time),
+                format_death_reason(Score.death_reason),
                 math.floor(Score.score)
             )
         )
@@ -376,7 +423,14 @@ local function updateMain(dt)
     end
 end
 
+local function killBird(source)
+    Score.death_reason = EATEN_BY_FROG
+end
+
 local function updateBird(bird)
+    -- TODO update calories
+    -- if calories < 0 kill Bird
+
     local up = bird.state.controls.up
     local down = bird.state.controls.down
     local left = bird.state.controls.left
