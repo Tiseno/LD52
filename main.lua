@@ -53,6 +53,7 @@ local BLUE = {0, 0, 1}
 
 CyclicTime = 0
 TimeAlive = 0
+TimeSpentInNest = 0
 KernelTimer = 0
 KERNEL_TIMER_COOLDOWN = 0.2 -- 2 -- TODO
 
@@ -82,6 +83,10 @@ local CATEGORY_KERNEL = 4
 local DEFAULT_BIRD_MASS = 0.03
 local DEFAULT_BIRD_INERTIA = 1000000000000000
 local DEFAULT_KERNEL_MASS = 0.001
+
+local SHOW_CALORIES_THRESHHOLD = 50
+local SHOW_CALORIES_WARNING_THRESHHOLD = 40
+local SHOW_CALORIES_CRITICAL_THRESHHOLD = 20
 
 local DEFAULT_FRICTION = 0.7
 
@@ -117,6 +122,7 @@ end
 local function random_falling_terms()
     local reasons = {
         "fell from a high place and died",
+        "hit the ground too hard",
         "apparently forgot how to fly",
         "failed the bird exam",
         "malfunctioned mid air",
@@ -173,7 +179,7 @@ end
 local function killBird(source)
     Objects.bird.state.dead = true
     setDeathReason(source)
-    Score.time = TimeAlive
+    Score.time = TimeAlive - TimeSpentInNest
     setScore()
 end
 
@@ -364,10 +370,11 @@ local function createBird()
         facing_left = false,
         flapping = false,
         on_ground = false,
+        in_nest = false,
         dead = false,
         controls = {up = false, down = false, left = false, right = false, rise = false},
         carrying = 0,
-        calories = 60,
+        calories = 55,
         expended_calories = 0
     }
 end
@@ -400,6 +407,7 @@ end
 local function initGameWorld()
     destroyWorld()
     TimeAlive = 0
+    TimeSpentInNest = 0
     KernelTimer = 0
 
     World = love.physics.newWorld(0, 981, true)
@@ -419,7 +427,9 @@ local function initGameWorld()
                 killBird(FELL_FROM_HIGH_PLACE)
             end
         end
+
         if bCat == CATEGORY_BIRD and a == Objects.nest_surface.fixture then
+            Objects.bird.state.in_nest = true
             print("Landed on nest surface")
             leaveKernelsInNest()
         end
@@ -450,6 +460,11 @@ local function initGameWorld()
         if aCat == CATEGORY_STATIC and bCat == CATEGORY_BIRD then
             print("Bird take off!")
             Objects.bird.state.on_ground = false
+        end
+
+        if bCat == CATEGORY_BIRD and a == Objects.nest_surface.fixture then
+            Objects.bird.state.in_nest = false
+            print("Left nest surface")
         end
     end
 
@@ -694,7 +709,11 @@ local function updateBird(bird, dt)
             end
         end
 
-        bird.state.expended_calories = bird.state.expended_calories - dt
+        if bird.state.in_nest then
+            bird.state.expended_calories = bird.state.expended_calories - (dt / 10)
+        else
+            bird.state.expended_calories = bird.state.expended_calories - (dt / 2)
+        end
         if (bird.state.calories + bird.state.expended_calories) < 0 then
             killBird(STARVED_TO_DEATH)
         end
@@ -776,6 +795,10 @@ function love.update(dt)
     end
 
     TimeAlive = TimeAlive + dt
+    if Objects.bird and Objects.bird.state.in_nest then
+        TimeSpentInNest = TimeSpentInNest + dt
+    end
+
     KernelTimer = KernelTimer + dt
 
     if STATE == GAME_RUNNING or STATE == GAME_OVER then
@@ -943,8 +966,14 @@ local function drawNest()
     end
 
     local caloriesInSystem = Objects.bird.state.calories + Objects.bird.state.expended_calories
-    if not Objects.bird.state.dead and caloriesInSystem < 30 then
-        love.graphics.setColor(unpack(RED))
+    if not Objects.bird.state.dead and caloriesInSystem < SHOW_CALORIES_THRESHHOLD then
+        if caloriesInSystem < SHOW_CALORIES_CRITICAL_THRESHHOLD then
+            love.graphics.setColor(unpack(RED))
+        elseif caloriesInSystem < SHOW_CALORIES_WARNING_THRESHHOLD then
+            love.graphics.setColor(unpack(ORANGE))
+        else
+            love.graphics.setColor(unpack(WHITE))
+        end
         love.graphics.printf(
             string.format("You have %s calories left", math.floor(caloriesInSystem + 1)),
             FontMini,
