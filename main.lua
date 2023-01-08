@@ -61,11 +61,12 @@ local stalk_bend_speed = DEFAULT_STALK_BEND_SPEED
 
 local World = {}
 local Objects = {}
+local Score = {collected = 0, time = 0, score = 0}
 local BackgroundProps = {}
 local Props = {}
 
 function love.keypressed(key, scancode, isrepeat)
-    if key == "escape" or key == "p" then
+    if key == "escape" or key == "p" or key == "pause" or key == "f10" then
         if STATE == GAME_RUNNING then
             STATE = GAME_PAUSED
         elseif STATE == GAME_PAUSED then
@@ -92,30 +93,29 @@ function love.keypressed(key, scancode, isrepeat)
     end
 end
 
-local function newMenuText(text, font, textColor)
+local function newMenuText(text, font, textColor, updateFn)
     return {
         type = "text",
         text = text,
         font = font,
-        textColor = textColor
+        textColor = textColor,
+        updateFn = updateFn
     }
 end
 
 -- SkyVaultGames: https://www.youtube.com/watch?v=vMSjVuJ6wDs
-local function newMenuButton(text, font, textColor, buttonColor, fn)
+local function newMenuButton(text, font, textColor, updateFn, buttonColor, fn)
     return {
         type = "button",
         text = text,
         font = font,
         textColor = textColor,
+        updateFn = updateFn,
         buttonColor = buttonColor,
         fn = fn,
         pressed = false
     }
 end
-
-local main_menu = {}
-local pause_menu = {}
 
 local function newBone(x, y, width, height, angle, color, children)
     return {
@@ -170,17 +170,6 @@ local function newWheat(x, y, baseColor, mutation)
     return updateWheat(wheat)
 end
 
-local function addDarkWheat(list)
-    local n = 380
-    local spacing = 5
-    for i = 0, n, 1 do
-        table.insert(
-            list,
-            newWheat(-(n * spacing * 0.5) + (i * spacing) - 2 + math.random() * 4, 0, darken_color(WHEAT_COLOR), 0)
-        )
-    end
-end
-
 local function addWheat(list, color, mut)
     local n = 300
     local spacing = 5
@@ -191,8 +180,8 @@ end
 
 -- https://love2d.org/wiki/Tutorial:Physics
 local function initGameWorld()
+    Time = 0
     World = love.physics.newWorld(0, 981, true)
-
     local window_width = love.graphics.getWidth()
     local window_height = love.graphics.getHeight()
 
@@ -221,7 +210,13 @@ local function initGameWorld()
     Objects.bird.fixture = love.physics.newFixture(Objects.bird.body, Objects.bird.shape)
     Objects.bird.fixture:setFriction(1)
     Objects.bird.body:setMassData(0, 0, 0.031415928155184, 1000000000000000)
-    Objects.bird.state = {facing_left = true, flapping = false, on_ground = false, dead = false}
+    Objects.bird.state = {
+        facing_left = true,
+        flapping = false,
+        on_ground = false,
+        dead = false,
+        controls = {up = false, down = false, left = false, right = false, rise = false}
+    }
 
     local function birdBeginsContactWithGround(a, b, coll)
         if b == Objects.bird.fixture then
@@ -248,11 +243,15 @@ local function destroyWorld()
     stalk_bend_speed = DEFAULT_STALK_BEND_SPEED
     World = {}
     Objects = {}
+    Score = {collected = 0, time = 0, score = 0}
     BackgroundProps = {}
     Props = {}
 end
 
 local MainMenuProps = {}
+local main_menu = {}
+local pause_menu = {}
+local game_over_menu = {}
 
 function love.load()
     addWheat(MainMenuProps, darken_color(WHEAT_COLOR), 0)
@@ -262,13 +261,14 @@ function love.load()
     FontLarge = love.graphics.newFont(32)
     love.physics.setMeter(100)
 
-    table.insert(main_menu, newMenuText("Wheat", FontLarge, WHITE))
+    table.insert(main_menu, newMenuText("Wheat", FontLarge, WHITE, nil))
     table.insert(
         main_menu,
         newMenuButton(
             "Play",
             FontSmall,
             WHITE,
+            nil,
             BROWN_GRAY,
             function()
                 print("Changed state to init")
@@ -282,6 +282,7 @@ function love.load()
             "Exit",
             FontSmall,
             WHITE,
+            nil,
             BROWN_GRAY,
             function()
                 love.event.quit()
@@ -296,6 +297,7 @@ function love.load()
             "Exit Game",
             FontSmall,
             WHITE,
+            nil,
             BROWN_GRAY,
             function()
                 destroyWorld()
@@ -309,9 +311,53 @@ function love.load()
             "Resume",
             FontSmall,
             WHITE,
+            nil,
             BROWN_GRAY,
             function()
                 STATE = GAME_RUNNING
+            end
+        )
+    )
+
+    table.insert(game_over_menu, newMenuText("Game Over", FontLarge, WHITE, nil))
+    local collectedScore = newMenuText("Collected: -", FontSmall, WHITE, nil)
+    collectedScore.updateFn = function()
+        collectedScore.text = string.format("Collected: %i", Score.collected)
+    end
+    table.insert(game_over_menu, collectedScore)
+    local survivedScore = newMenuText("Survived: - s", FontSmall, WHITE, nil)
+    survivedScore.updateFn = function()
+        survivedScore.text = string.format("Survived: %i s", math.floor(Score.time))
+    end
+    table.insert(game_over_menu, survivedScore)
+    local totalScore = newMenuText("Score: -", FontSmall, WHITE, nil)
+    totalScore.updateFn = function()
+        totalScore.text = string.format("Score: %i", math.floor(Score.score))
+    end
+    table.insert(game_over_menu, totalScore)
+    local shareScoreButton = newMenuButton("Share Score", FontSmall, WHITE, nil, BROWN_GRAY)
+    shareScoreButton.fn = function()
+        love.system.setClipboardText(
+            string.format(
+                "I Collected %i wheat, survived for %i seconds, and got a total score of %i!",
+                math.floor(Score.collected),
+                math.floor(Score.time),
+                math.floor(Score.score)
+            )
+        )
+        shareScoreButton.text = "Copied to clipboard!"
+    end
+    table.insert(game_over_menu, shareScoreButton)
+    table.insert(
+        game_over_menu,
+        newMenuButton(
+            "Main Menu",
+            FontSmall,
+            WHITE,
+            nil,
+            BROWN_GRAY,
+            function()
+                STATE = MAIN_MENU
             end
         )
     )
@@ -324,82 +370,118 @@ local function updateProp(prop, dt)
     end
 end
 
-local function main_update(dt)
+local function updateMain(dt)
     for _, prop in ipairs(MainMenuProps) do
         updateProp(prop, dt)
     end
 end
 
-local function game_update(dt)
+local function updateBird(bird)
+    local up = bird.state.controls.up
+    local down = bird.state.controls.down
+    local left = bird.state.controls.left
+    local right = bird.state.controls.right
+    local rise = bird.state.controls.rise
+
+    local xv, yv = bird.body:getLinearVelocity()
+    if up then
+        bird.state.flapping = true
+        if rise then
+            if yv > -300 then
+                bird.body:applyForce(0, -90)
+            end
+        elseif bird.state.on_ground then
+            -- do nothing, we be perching
+        elseif down then
+            if yv > 200 then
+                bird.body:applyForce(0, -90)
+            end
+        elseif yv > 0 then
+            bird.body:applyForce(0, -90)
+        end
+    else
+        bird.state.flapping = false
+    end
+
+    if right then
+        if bird.state.flapping and xv < 300 then
+            bird.body:applyForce(35, 0)
+        end
+        bird.state.facing_left = false
+    else
+        if bird.state.flapping and xv < -10 then
+            bird.body:applyForce(10, 0)
+        end
+    end
+
+    if left then
+        if bird.state.flapping and xv > -300 then
+            bird.body:applyForce(-35, 0)
+        end
+        bird.state.facing_left = true
+    else
+        if bird.state.flapping and xv > 10 then
+            bird.body:applyForce(-10, 0)
+        end
+    end
+
+    if bird.state.on_ground and rise then
+        if bird.state.flapping then
+            bird.body:applyLinearImpulse(0, -12)
+        elseif bird.state.facing_left then
+            bird.body:applyLinearImpulse(-2, -8)
+        else
+            bird.body:applyLinearImpulse(2, -8)
+        end
+        bird.state.on_ground = false
+
+        print("Applied jump impulse")
+    end
+end
+
+local function updateBirdControlsFromPlayerInput(bird)
+    if bird.state.dead then
+        bird.state.controls.up = false
+        bird.state.controls.left = false
+        bird.state.controls.down = false
+        bird.state.controls.right = false
+        bird.state.controls.rise = false
+    else
+        bird.state.controls.up = love.keyboard.isDown("w") or love.keyboard.isDown("k")
+        bird.state.controls.left = love.keyboard.isDown("a") or love.keyboard.isDown("h")
+        bird.state.controls.down = love.keyboard.isDown("s") or love.keyboard.isDown("j")
+        bird.state.controls.right = love.keyboard.isDown("d") or love.keyboard.isDown("l")
+        bird.state.controls.rise = love.keyboard.isDown("space")
+    end
+end
+
+local function updateMenu(menu)
+    for _, item in ipairs(menu) do
+        if item.updateFn then
+            item.updateFn()
+        end
+    end
+end
+
+local function updateGame(dt)
     World:update(dt)
 
-    if love.keyboard.isDown("w") then
+    -- TODO remove
+    if love.keyboard.isDown("up") then
         Objects.ground.body:setY(Objects.ground.body:getY() - dt * 100)
     end
-    if love.keyboard.isDown("s") then
+    if love.keyboard.isDown("down") then
         Objects.ground.body:setY(Objects.ground.body:getY() + dt * 100)
     end
-    if love.keyboard.isDown("a") then
+    if love.keyboard.isDown("left") then
         Objects.ground.body:setX(Objects.ground.body:getX() - dt * 100)
     end
-    if love.keyboard.isDown("d") then
+    if love.keyboard.isDown("right") then
         Objects.ground.body:setX(Objects.ground.body:getX() + dt * 100)
     end
 
-    local xv, yv = Objects.bird.body:getLinearVelocity()
-    if love.keyboard.isDown("up") or love.keyboard.isDown("k") then
-        Objects.bird.state.flapping = true
-        if love.keyboard.isDown("lshift") or love.keyboard.isDown("space") then
-            if yv > -300 then
-                Objects.bird.body:applyForce(0, -90)
-            end
-        elseif love.keyboard.isDown("lctrl") or love.keyboard.isDown("j") or love.keyboard.isDown("down") then
-            if yv > 200 then
-                Objects.bird.body:applyForce(0, -90)
-            end
-        elseif Objects.bird.state.on_ground then
-            -- do nothing, we be perching
-        elseif yv > 0 then
-            Objects.bird.body:applyForce(0, -90)
-        end
-    else
-        Objects.bird.state.flapping = false
-    end
-
-    if love.keyboard.isDown("left") or love.keyboard.isDown("h") then
-        if Objects.bird.state.flapping and xv > -300 then
-            Objects.bird.body:applyForce(-35, 0)
-        end
-        Objects.bird.state.facing_left = true
-    else
-        if Objects.bird.state.flapping and xv > 10 then
-            Objects.bird.body:applyForce(-10, 0)
-        end
-    end
-
-    if love.keyboard.isDown("right") or love.keyboard.isDown("l") then
-        if Objects.bird.state.flapping and xv < 300 then
-            Objects.bird.body:applyForce(35, 0)
-        end
-        Objects.bird.state.facing_left = false
-    else
-        if Objects.bird.state.flapping and xv < -10 then
-            Objects.bird.body:applyForce(10, 0)
-        end
-    end
-
-    if Objects.bird.state.on_ground and love.keyboard.isDown("space") then
-        if Objects.bird.state.flapping then
-            Objects.bird.body:applyLinearImpulse(0, -12)
-        elseif Objects.bird.state.facing_left then
-            Objects.bird.body:applyLinearImpulse(-2, -8)
-        else
-            Objects.bird.body:applyLinearImpulse(2, -8)
-        end
-        Objects.bird.state.on_ground = false
-
-        print("Applies jump impulse")
-    end
+    updateBirdControlsFromPlayerInput(Objects.bird)
+    updateBird(Objects.bird)
 
     for _, prop in ipairs(BackgroundProps) do
         updateProp(prop, dt)
@@ -407,6 +489,13 @@ local function game_update(dt)
 
     for _, prop in ipairs(Props) do
         updateProp(prop, dt)
+    end
+
+    if STATE == GAME_RUNNING and Objects.bird.state.dead then
+        STATE = GAME_OVER
+        -- TODO store wheat score
+        Score.time = Time
+        updateMenu(game_over_menu)
     end
 end
 
@@ -428,17 +517,17 @@ function love.update(dt)
     Time = Time + dt
     if Time > math.pi then
         Time = Time - 1
-        if Objects.bird then
-            print(Objects.bird.body:getPosition())
+        if STATE == GAME_RUNNING and Objects.bird then
+            print("Bird is at", Objects.bird.body:getPosition())
         end
     end
 
-    if STATE == GAME_RUNNING then
-        game_update(dt)
+    if STATE == GAME_RUNNING or STATE == GAME_OVER then
+        updateGame(dt)
     end
 
     if STATE == MAIN_MENU then
-        main_update(dt)
+        updateMain(dt)
     end
 end
 
@@ -626,6 +715,7 @@ function love.draw(dt)
 
     if STATE == GAME_OVER then
         drawGameWorld()
-    -- TODO
+        drawWindowTint()
+        drawMenu(game_over_menu)
     end
 end
