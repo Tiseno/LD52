@@ -51,6 +51,7 @@ local RED = {1, 0, 0}
 local GREEN = {0, 1, 0}
 local BLUE = {0, 0, 1}
 
+Time = 0
 CyclicTime = 0
 TimeAlive = 0
 TimeSpentInNest = 0
@@ -64,6 +65,7 @@ local stalk_bend_speed = DEFAULT_STALK_BEND_SPEED
 
 local World = {}
 local Objects = {}
+local CreatedFrogs = 0
 local Score = {collected = 0, time = 0, score = 0, death_reason = nil}
 local BackgroundProps = {}
 local Props = {}
@@ -134,8 +136,7 @@ end
 
 local function random_starving_terms()
     local reasons = {
-        "starved to death",
-        "got too hungry"
+        "starved to death"
     }
     return reasons[1 + math.floor(math.random() * #reasons)]
 end
@@ -156,7 +157,10 @@ end
 
 local function format_death_reason_hint(death_reason)
     if death_reason == STARVED_TO_DEATH then
-        return string.format("FYI: You eat one wheat (%ical) every return to the nest.", KERNEL_CALORIE_WORTH)
+        return string.format(
+            "Every time a bird returns to its nest, it eats some of its harvest.",
+            KERNEL_CALORIE_WORTH
+        )
     elseif death_reason == FELL_FROM_HIGH_PLACE then
         return ""
     elseif death_reason == EATEN_BY_FROG then
@@ -189,9 +193,20 @@ end
 
 local function turnFrogs()
     for _, frog in ipairs(Objects.frogs) do
-        frog.evil = not frog.evil
+        if not frog.evil then
+            frog.evil = true
+            frog.croak()
+        end
     end
 end
+
+local function activateFrogs()
+    for _, frog in ipairs(Objects.frogs) do
+        frog.active = true
+    end
+end
+
+local toggle_props = false
 
 function love.keypressed(key, scancode, isrepeat)
     if key == "escape" or key == "p" or key == "pause" or key == "f10" then
@@ -203,6 +218,10 @@ function love.keypressed(key, scancode, isrepeat)
     end
 
     -- TODO remove all these
+    if key == "3" then
+        toggle_props = not toggle_props
+    end
+
     if key == "4" then
         turnFrogs()
     end
@@ -328,6 +347,7 @@ local function destroyWorld()
     stalk_bend_speed = DEFAULT_STALK_BEND_SPEED
     World = {}
     Objects = {}
+    CreatedFrogs = 0
     Score = {collected = 0, time = 0, score = 0, death_reason = nil}
     BackgroundProps = {}
     Props = {}
@@ -377,7 +397,7 @@ local function createBird()
     Objects.bird.body = love.physics.newBody(World, -275, -516, "dynamic")
     Objects.bird.shape = love.physics.newCircleShape(bird_size)
     Objects.bird.fixture = love.physics.newFixture(Objects.bird.body, Objects.bird.shape)
-    Objects.bird.fixture:setFriction(DEFAULT_FRICTION)
+    Objects.bird.fixture:setFriction(0.2)
     Objects.bird.fixture:setCategory(CATEGORY_BIRD)
     Objects.bird.body:setMassData(0, 0, DEFAULT_BIRD_MASS, DEFAULT_BIRD_INERTIA)
     Objects.bird.state = {
@@ -402,7 +422,7 @@ local function createFrog(x, y, scale)
     object.base_height = (10) * scale + math.random() * (20) * scale
 
     object.body_width = math.min((30) * scale + (30) * scale * math.random(), object.base_width - (10) * scale)
-    object.body_height = math.random() * (20) * scale
+    object.body_height = (5) * scale + math.random() * (20) * scale
 
     object.eye_spacing = (20) * scale + math.random() * (object.body_width - (10)) * scale
 
@@ -415,24 +435,44 @@ local function createFrog(x, y, scale)
     object.eye_ball_width = object.eye_socket_width - (5) * scale
     object.eye_ball_height = object.eye_socket_height - (5) * scale
 
-    object.width = math.max(object.eye_spacing + (object.eye_socket_width / 2), object.base_width, object.body_width)
-    object.height = object.base_height + object.stalk_height + object.eye_socket_height
-
-    object.strength = object.width + object.height
+    -- object.width = math.max(object.eye_spacing + (object.eye_socket_width / 2), object.base_width, object.body_width)
+    -- object.height = object.base_height + object.stalk_height + object.eye_socket_height
+    -- object.strength = object.width + object.height
 
     object.pitch = math.max(1 - (scale) / 2 + math.random() * 0.3, 0.5)
+    object.croak = function()
+        sounds.croak:setPitch(object.pitch)
+        sounds.croak:play()
+    end
 
     object.evil = false
 
     object.timer = math.random()
 
     object.body = love.physics.newBody(World, x, y, "dynamic")
-    object.shape = love.physics.newRectangleShape(object.width, object.height)
+
+    -- object.shape = love.physics.newRectangleShape(object.width, object.height)
+    -- local hw = object.width / 2
+    -- local hh = object.height / 2
+    object.shape =
+        love.physics.newPolygonShape(
+        -object.base_width / 2,
+        0,
+        -object.base_width / 2,
+        -object.base_height,
+        0,
+        -object.base_height - object.body_height,
+        object.base_width / 2,
+        -object.base_height,
+        object.base_width / 2,
+        0
+    )
+
     object.fixture = love.physics.newFixture(object.body, object.shape)
-    object.fixture:setFriction(DEFAULT_FRICTION)
+    object.fixture:setFriction(0.2)
     object.fixture:setCategory(CATEGORY_FROG)
 
-    object.body:setMassData(0, 0, DEFAULT_BIRD_MASS, DEFAULT_BIRD_INERTIA)
+    -- object.body:setMassData(0, 0, DEFAULT_BIRD_MASS, DEFAULT_BIRD_INERTIA)
 
     return object
 end
@@ -441,7 +481,7 @@ local function leaveKernelsInNest()
     -- sounds.collision:play() -- TODO
     if Objects.bird.state.carrying > 0 then
         Objects.bird.state.calories = Objects.bird.state.calories + KERNEL_CALORIE_WORTH
-        Score.collected = Score.collected + Objects.bird.state.carrying - 1
+        Score.collected = Score.collected + Objects.bird.state.carrying
         Objects.bird.state.carrying = 0
         -- XXX This is ugly, but I don't know really how to do this correctly
         -- as we are not allowed to modify physics while in world callbacks
@@ -465,6 +505,7 @@ end
 -- https://love2d.org/wiki/Tutorial:Physics
 local function initGameWorld()
     destroyWorld()
+    Time = 0
     TimeAlive = 0
     TimeSpentInNest = 0
     KernelTimer = 0
@@ -476,9 +517,6 @@ local function initGameWorld()
     createBird()
 
     Objects.frogs = {}
-    for i = 1, 1, 1 do
-        table.insert(Objects.frogs, createFrog(-400 + i * 120, -200, 1.2 + 0.2 * math.random()))
-    end
 
     local function beginContact(a, b, coll)
         local aCat = a:getCategory()
@@ -545,6 +583,8 @@ local game_over_menu = {}
 
 function love.load()
     math.randomseed(os.time())
+    sounds.bee_buzz = love.audio.newSource("bee_buzz.wav", "static")
+    sounds.bee_buzz:setVolume(0.3)
 
     sounds.gob = love.audio.newSource("gob.wav", "static")
     sounds.gob:setVolume(0.3)
@@ -850,21 +890,31 @@ end
 
 local function updateFrog(frog, dt)
     frog.timer = frog.timer + dt
+
+    -- if frog.timer > 5 then
+    --     frog.evil = true
+    -- end
+    --
+    -- if frog.timer > 10 then
+    --     frog.active = true
+    -- end
+
     local mod = math.random() > 0.5 and 1 or -1
 
     local JUMP_X_FACTOR = 100 * mod
     local JUMP_Y_FACTOR = -400
 
-    if frog.timer > 1 then
-        frog.timer = frog.timer - 1 - math.random() * 2
-        if math.random() < 0.3 then
-            if frog.evil then
-                sounds.croak:setPitch(0.35)
-                sounds.croak:play()
-            else
-                sounds.croak:setPitch(frog.pitch)
-                sounds.croak:play()
-            end
+    if frog.active then
+        -- frog.timer = frog.timer - 1 - math.random() * 2
+        if math.random() < 0.01 then
+            -- if frog.evil then
+            --     sounds.croak:setPitch(0.35)
+            --     sounds.croak:play()
+            -- else
+            -- sounds.croak:setPitch(frog.pitch)
+            -- sounds.croak:play()
+            frog.croak()
+            -- end
             local mass = frog.body:getMass()
             frog.body:applyLinearImpulse(mass * JUMP_X_FACTOR, mass * JUMP_Y_FACTOR)
         end
@@ -874,12 +924,37 @@ end
 local function updateGame(dt)
     World:update(dt)
 
+    local FROG_INTERVAL = 40 -- TODO
+
+    if Score.collected >= FROG_INTERVAL and CreatedFrogs <= 0 then
+        table.insert(Objects.frogs, createFrog(450 + math.random() * 100, 10, 1.2 + 0.2 * math.random()))
+        CreatedFrogs = CreatedFrogs + 1
+    end
+
+    if Score.collected >= FROG_INTERVAL * 2 and CreatedFrogs <= 1 then
+        table.insert(Objects.frogs, createFrog(-450 - math.random() * 100, 10, 1.2 + 0.2 * math.random()))
+        CreatedFrogs = CreatedFrogs + 1
+    end
+
+    if Score.collected >= FROG_INTERVAL * 3 and CreatedFrogs <= 2 then
+        table.insert(Objects.frogs, createFrog(0 - 50 + math.random() * 100, 10, 1.4 + 0.2 * math.random()))
+        CreatedFrogs = CreatedFrogs + 1
+    end
+
+    if Score.collected > FROG_INTERVAL * 4 then
+        turnFrogs()
+    end
+
+    if Score.collected > FROG_INTERVAL * 5 then
+        activateFrogs()
+    end
+
     if Objects.kernels == nil then
         Objects.kernels = {}
     end
     if KernelTimer > KERNEL_TIMER_COOLDOWN then
         KernelTimer = KernelTimer - KERNEL_TIMER_COOLDOWN
-        if #Objects.kernels < 20 then
+        if #Objects.kernels < 200 then
             table.insert(Objects.kernels, createKernel())
         end
     end
@@ -920,6 +995,7 @@ function love.update(dt)
         CyclicTime = CyclicTime - (2 * math.pi)
     end
 
+    Time = Time + dt
     TimeAlive = TimeAlive + dt
     if Objects.bird and Objects.bird.state.in_nest then
         TimeSpentInNest = TimeSpentInNest + dt
@@ -1006,8 +1082,14 @@ local function drawBird(bird, x, y)
     love.graphics.translate(x, y)
 
     if not bird.dead and bird.carrying > 0 then
-        love.graphics.setColor(unpack(WHEAT_COLOR))
-        love.graphics.printf(tostring(bird.carrying), FontMini, -25, -25, 50, "center")
+        if bird.carrying > 50 then
+            love.graphics.setColor(unpack(RED))
+        elseif bird.carrying > 40 then
+            love.graphics.setColor(unpack(ORANGE))
+        else
+            love.graphics.setColor(unpack(WHEAT_COLOR))
+        end
+        love.graphics.printf(string.format("%i", bird.carrying), FontMini, -25, -25, 50, "center")
     end
 
     if bird.facing_left then
@@ -1070,7 +1152,7 @@ local function drawFrog(frog) --x, y, w, h)
     local FROG_BRIGHT_PURPLE = rgb(160, 44, 160)
 
     love.graphics.push()
-    love.graphics.translate(x, y + (frog.height / 2))
+    love.graphics.translate(x, y) -- + (frog.height / 2))
 
     love.graphics.setColor(unpack(FROG_DARK_GREEN))
     drawRectMiddleBottom(0, 0, frog.base_width, frog.base_height)
@@ -1130,6 +1212,8 @@ local function drawFrog(frog) --x, y, w, h)
         frog.eye_ball_width,
         frog.eye_ball_height / 3
     )
+
+    drawPoint(x, y, 5, RED)
 
     love.graphics.pop()
 end
@@ -1211,12 +1295,6 @@ local function drawObjects()
     -- love.graphics.setColor(unpack(BROWN_GRAY))
     -- love.graphics.polygon("fill", Objects.right_wall.body:getWorldPoints(Objects.right_wall.shape:getPoints()))
 
-    if Objects.frogs then
-        for _, frog in ipairs(Objects.frogs) do
-            drawFrog(frog)
-        end
-    end
-
     if Objects.kernels then
         for _, kernel in ipairs(Objects.kernels) do
             love.graphics.setColor(unpack(kernel.color))
@@ -1226,13 +1304,22 @@ local function drawObjects()
 
     drawBird(Objects.bird.state, Objects.bird.body:getPosition())
 
+    if Objects.frogs then
+        for _, frog in ipairs(Objects.frogs) do
+            drawFrog(frog)
+        end
+    end
+
     love.graphics.pop()
 end
 
 local function drawGameWorld()
     drawProps(BackgroundProps)
     drawObjects()
-    drawProps(Props)
+    -- TODO remove
+    if toggle_props then
+        drawProps(Props)
+    end
 end
 
 local function drawWindowTint()
