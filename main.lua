@@ -77,8 +77,9 @@ local CATEGORY_STATIC = 2
 local CATEGORY_BIRD = 3
 local CATEGORY_KERNEL = 4
 
-local DEFAULT_BIRD_MASS = 0.031415928155184
+local DEFAULT_BIRD_MASS = 0.03
 local DEFAULT_BIRD_INERTIA = 1000000000000000
+local DEFAULT_KERNEL_MASS = 0.0015
 
 local function random_frog_verb()
     local reasons = {
@@ -298,6 +299,7 @@ local function createKernel()
     object.fixture = love.physics.newFixture(object.body, object.shape)
     object.fixture:setCategory(CATEGORY_KERNEL)
     object.color = mutate_color(WHEAT_COLOR, 0.2)
+    object.body:setMass(DEFAULT_KERNEL_MASS)
     object.body:applyAngularImpulse(300)
     return object
 end
@@ -350,14 +352,30 @@ local function createBird()
 end
 
 local function leaveKernelsInNest()
-    -- TODO change mass of bird
     Score.collected = Score.collected + Objects.bird.state.carrying
     Objects.bird.state.carrying = 0
+    -- XXX This is ugly, but I don't know really how to do this correctly
+    -- as we are not allowed to modify physics while in world callbacks
+    -- Should we emit some event instead? Is there built in utilities for that? No idea
+    Objects.bird.should_reset_mass = true
 end
 
-local function pickingUpKernel()
-    -- TODO change mass of bird
+local function pickingUpKernel(kernel)
+    print("Picking up kernel", kernel)
+    local kernelMass = kernel.body:getMass()
+    print("kernel", kernelMass)
+    local birdMass = Objects.bird.body:getMass()
+    print("bird", birdMass)
+    -- Objects.bird.body:setMass(kernelMass + birdMass)
+    -- print("new bird", Objects.bird.body:getMass())
+
     Objects.bird.state.carrying = Objects.bird.state.carrying + 1
+
+    -- XXX this is ugly but must work for now
+    if Objects.bird.extra_mass == nil then
+        Objects.bird.extra_mass = {}
+    end
+    table.insert(Objects.bird.extra_mass, kernelMass)
 end
 
 -- https://love2d.org/wiki/Tutorial:Physics
@@ -400,13 +418,11 @@ local function initGameWorld()
                 end
             end
             if picked_kernel then
+                pickingUpKernel(picked_kernel)
                 picked_kernel.body:destroy()
                 picked_kernel.fixture:destroy()
-            end
-            if picked_kernel_index then
                 table.remove(Objects.kernels, picked_kernel_index)
             end
-            pickingUpKernel()
         end
     end
 
@@ -564,6 +580,19 @@ end
 local function updateBird(bird)
     -- TODO update calories
     -- if calories < 0 kill Bird
+
+    if bird.should_reset_mass then
+        bird.body:setMass(DEFAULT_BIRD_MASS)
+        bird.should_reset_mass = false
+    end
+    if bird.extra_mass ~= nil and #bird.extra_mass > 0 then
+        local sum = 0
+        for _, v in ipairs(bird.extra_mass) do
+            sum = sum + v
+        end
+        bird.body:setMass(bird.body:getMass() + sum)
+        bird.extra_mass = {}
+    end
 
     local up = bird.state.controls.up
     local down = bird.state.controls.down
