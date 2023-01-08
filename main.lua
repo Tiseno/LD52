@@ -6,7 +6,7 @@ local GAME_RUNNING = "GAME_RUNNING"
 local GAME_PAUSED = "GAME_PAUSED"
 local GAME_OVER = "GAME_OVER"
 
-local STATE = GAME_INIT
+local STATE = MAIN_MENU
 
 --https://colorpicker.me
 local function rgb(r, g, b)
