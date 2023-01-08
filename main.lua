@@ -6,9 +6,9 @@ local GAME_RUNNING = "GAME_RUNNING"
 local GAME_PAUSED = "GAME_PAUSED"
 local GAME_OVER = "GAME_OVER"
 
-local STATE = MAIN_MENU
+local STATE = GAME_INIT
 
---https://colorpicker.me
+-- https://colorpicker.me
 local function rgb(r, g, b)
     return {r / 255, g / 255, b / 255}
 end
@@ -79,6 +79,7 @@ local CATEGORY_DEFAULT = 1
 local CATEGORY_STATIC = 2
 local CATEGORY_BIRD = 3
 local CATEGORY_KERNEL = 4
+local CATEGORY_FROG = 5
 
 local DEFAULT_BIRD_MASS = 0.03
 local DEFAULT_BIRD_INERTIA = 1000000000000000
@@ -176,11 +177,20 @@ local function setDeathReason(source)
     Score.hint = format_death_reason_hint(source)
 end
 
+local sounds = {}
+
 local function killBird(source)
+    sounds.collision:play()
     Objects.bird.state.dead = true
     setDeathReason(source)
     Score.time = TimeAlive - TimeSpentInNest
     setScore()
+end
+
+local function turnFrogs()
+    for _, frog in ipairs(Objects.frogs) do
+        frog.evil = not frog.evil
+    end
 end
 
 function love.keypressed(key, scancode, isrepeat)
@@ -193,6 +203,10 @@ function love.keypressed(key, scancode, isrepeat)
     end
 
     -- TODO remove all these
+    if key == "4" then
+        turnFrogs()
+    end
+
     if key == "5" then
         killBird(MANGLED_BY_TRACTOR)
     end
@@ -379,10 +393,52 @@ local function createBird()
     }
 end
 
-local sounds = {}
+local function createFrog(x, y, scale)
+    if scale == nil then
+        scale = 1
+    end
+    local object = {}
+    object.base_width = (40) * scale + (60) * scale * math.random()
+    object.base_height = (10) * scale + math.random() * (20) * scale
+
+    object.body_width = math.min((30) * scale + (30) * scale * math.random(), object.base_width - (10) * scale)
+    object.body_height = math.random() * (20) * scale
+
+    object.eye_spacing = (20) * scale + math.random() * (object.body_width - (10)) * scale
+
+    object.stalk_width = (5) * scale + math.random() * (5) * scale
+    object.stalk_height = (30) * scale * math.random()
+
+    object.eye_socket_width = (object.stalk_width * (3)) + (5) * scale * math.random()
+    object.eye_socket_height = object.eye_socket_width
+
+    object.eye_ball_width = object.eye_socket_width - (5) * scale
+    object.eye_ball_height = object.eye_socket_height - (5) * scale
+
+    object.width = math.max(object.eye_spacing + (object.eye_socket_width / 2), object.base_width, object.body_width)
+    object.height = object.base_height + object.stalk_height + object.eye_socket_height
+
+    object.strength = object.width + object.height
+
+    object.pitch = math.max(1 - (scale) / 2 + math.random() * 0.3, 0.5)
+
+    object.evil = false
+
+    object.timer = math.random()
+
+    object.body = love.physics.newBody(World, x, y, "dynamic")
+    object.shape = love.physics.newRectangleShape(object.width, object.height)
+    object.fixture = love.physics.newFixture(object.body, object.shape)
+    object.fixture:setFriction(DEFAULT_FRICTION)
+    object.fixture:setCategory(CATEGORY_FROG)
+
+    object.body:setMassData(0, 0, DEFAULT_BIRD_MASS, DEFAULT_BIRD_INERTIA)
+
+    return object
+end
 
 local function leaveKernelsInNest()
-    -- sounds.collision:play()
+    -- sounds.collision:play() -- TODO
     if Objects.bird.state.carrying > 0 then
         Objects.bird.state.calories = Objects.bird.state.calories + KERNEL_CALORIE_WORTH
         Score.collected = Score.collected + Objects.bird.state.carrying - 1
@@ -397,7 +453,6 @@ end
 local function pickingUpKernel(kernel)
     sounds.tick:play()
     local kernelMass = kernel.body:getMass()
-    local birdMass = Objects.bird.body:getMass()
     Objects.bird.state.carrying = Objects.bird.state.carrying + 1
 
     -- XXX this is ugly but must work for now
@@ -419,6 +474,11 @@ local function initGameWorld()
     createNest(-270, -500)
     createWorldBounds()
     createBird()
+
+    Objects.frogs = {}
+    for i = 1, 1, 1 do
+        table.insert(Objects.frogs, createFrog(-400 + i * 120, -200, 1.2 + 0.2 * math.random()))
+    end
 
     local function beginContact(a, b, coll)
         local aCat = a:getCategory()
@@ -484,13 +544,25 @@ local pause_menu = {}
 local game_over_menu = {}
 
 function love.load()
+    math.randomseed(os.time())
+
+    sounds.gob = love.audio.newSource("gob.wav", "static")
+    sounds.gob:setVolume(0.3)
+
+    sounds.demon = love.audio.newSource("demon.wav", "static")
+    sounds.demon:setVolume(0.3)
+
     sounds.croak = love.audio.newSource("croak.wav", "static")
+    sounds.croak:setVolume(0.3)
+
     sounds.tick = love.audio.newSource("tick.wav", "static")
     sounds.tick:setVolume(5)
+
     sounds.small_swosh = love.audio.newSource("small_swosh.wav", "static")
     sounds.small_swosh:setVolume(0.15)
 
-    sounds.croak:play()
+    sounds.collision = love.audio.newSource("collision.wav", "static")
+    sounds.collision:setVolume(6)
 
     addWheat(MainMenuProps, darken_color(WHEAT_COLOR), 0)
     addWheat(MainMenuProps, WHEAT_COLOR, 0.1)
@@ -776,6 +848,29 @@ local function updateMenu(menu)
     end
 end
 
+local function updateFrog(frog, dt)
+    frog.timer = frog.timer + dt
+    local mod = math.random() > 0.5 and 1 or -1
+
+    local JUMP_X_FACTOR = 100 * mod
+    local JUMP_Y_FACTOR = -400
+
+    if frog.timer > 1 then
+        frog.timer = frog.timer - 1 - math.random() * 2
+        if math.random() < 0.3 then
+            if frog.evil then
+                sounds.croak:setPitch(0.35)
+                sounds.croak:play()
+            else
+                sounds.croak:setPitch(frog.pitch)
+                sounds.croak:play()
+            end
+            local mass = frog.body:getMass()
+            frog.body:applyLinearImpulse(mass * JUMP_X_FACTOR, mass * JUMP_Y_FACTOR)
+        end
+    end
+end
+
 local function updateGame(dt)
     World:update(dt)
 
@@ -791,6 +886,10 @@ local function updateGame(dt)
 
     updateBirdControlsFromPlayerInput(Objects.bird)
     updateBird(Objects.bird, dt)
+
+    for _, frog in ipairs(Objects.frogs) do
+        updateFrog(frog, dt)
+    end
 
     for _, prop in ipairs(BackgroundProps) do
         updateProp(prop, dt)
@@ -952,6 +1051,89 @@ local function drawBird(bird, x, y)
     love.graphics.pop()
 end
 
+local function drawRectMiddleMiddle(x, y, width, height)
+    -- love.graphics.rectangle("fill", x - (width / 2), y, width, height) -- origin in the middle bottom
+    love.graphics.rectangle("fill", x - (width / 2), y, -(height / 2), width, height) -- origin in the middle
+end
+
+local function drawRectMiddleBottom(x, y, width, height)
+    love.graphics.rectangle("fill", x - (width / 2), y - height, width, height)
+end
+
+local function drawFrog(frog) --x, y, w, h)
+    local x, y = frog.body:getPosition()
+    local FROG_DARK_GREEN = rgb(20, 72, 20)
+    local FROG_DARKER_GREEN = rgb(14, 52, 14)
+    local FROG_PURPLE = rgb(52, 14, 52)
+
+    local FROG_PURPLE = rgb(120, 33, 120)
+    local FROG_BRIGHT_PURPLE = rgb(160, 44, 160)
+
+    love.graphics.push()
+    love.graphics.translate(x, y + (frog.height / 2))
+
+    love.graphics.setColor(unpack(FROG_DARK_GREEN))
+    drawRectMiddleBottom(0, 0, frog.base_width, frog.base_height)
+    drawRectMiddleBottom(0, -frog.base_height, frog.body_width, frog.body_height)
+    -- stalks
+    drawRectMiddleBottom(0 + (frog.eye_spacing / 2), -frog.base_height, frog.stalk_width, frog.stalk_height)
+    drawRectMiddleBottom(0 - (frog.eye_spacing / 2), -frog.base_height, frog.stalk_width, frog.stalk_height)
+    -- eye sockets
+    drawRectMiddleBottom(
+        0 + (frog.eye_spacing / 2) + (frog.eye_socket_width / 2) - frog.stalk_width,
+        -frog.base_height - frog.stalk_height,
+        frog.eye_socket_width,
+        frog.eye_socket_height
+    )
+    drawRectMiddleBottom(
+        0 - (frog.eye_spacing / 2) - (frog.eye_socket_width / 2) + frog.stalk_width,
+        -frog.base_height - frog.stalk_height,
+        frog.eye_socket_width,
+        frog.eye_socket_height
+    )
+
+    -- eyes
+    love.graphics.setColor(unpack(FROG_PURPLE))
+    drawRectMiddleBottom(
+        0 + (frog.eye_spacing / 2) + (frog.eye_socket_width / 2) - frog.stalk_width +
+            (frog.eye_socket_width - frog.eye_ball_width) / 2,
+        -frog.base_height - frog.stalk_height,
+        frog.eye_ball_width,
+        frog.eye_ball_height
+    )
+    drawRectMiddleBottom(
+        0 - (frog.eye_spacing / 2) - (frog.eye_socket_width / 2) + frog.stalk_width -
+            (frog.eye_socket_width - frog.eye_ball_width) / 2,
+        -frog.base_height - frog.stalk_height,
+        frog.eye_ball_width,
+        frog.eye_ball_height
+    )
+
+    -- pupils
+    if frog.evil then
+        love.graphics.setColor(unpack(RED))
+    else
+        love.graphics.setColor(unpack(FROG_BRIGHT_PURPLE))
+    end
+
+    drawRectMiddleBottom(
+        0 + (frog.eye_spacing / 2) + (frog.eye_socket_width / 2) - frog.stalk_width +
+            (frog.eye_socket_width - frog.eye_ball_width) / 2,
+        -frog.base_height - frog.stalk_height - (frog.eye_ball_height / 3),
+        frog.eye_ball_width,
+        frog.eye_ball_height / 3
+    )
+    drawRectMiddleBottom(
+        0 - (frog.eye_spacing / 2) - (frog.eye_socket_width / 2) + frog.stalk_width -
+            (frog.eye_socket_width - frog.eye_ball_width) / 2,
+        -frog.base_height - frog.stalk_height - (frog.eye_ball_height / 3),
+        frog.eye_ball_width,
+        frog.eye_ball_height / 3
+    )
+
+    love.graphics.pop()
+end
+
 local function drawWheat(w)
     love.graphics.push()
     love.graphics.translate(w.x, w.y)
@@ -1029,7 +1211,11 @@ local function drawObjects()
     -- love.graphics.setColor(unpack(BROWN_GRAY))
     -- love.graphics.polygon("fill", Objects.right_wall.body:getWorldPoints(Objects.right_wall.shape:getPoints()))
 
-    drawBird(Objects.bird.state, Objects.bird.body:getPosition())
+    if Objects.frogs then
+        for _, frog in ipairs(Objects.frogs) do
+            drawFrog(frog)
+        end
+    end
 
     if Objects.kernels then
         for _, kernel in ipairs(Objects.kernels) do
@@ -1037,6 +1223,8 @@ local function drawObjects()
             love.graphics.polygon("fill", kernel.body:getWorldPoints(kernel.shape:getPoints()))
         end
     end
+
+    drawBird(Objects.bird.state, Objects.bird.body:getPosition())
 
     love.graphics.pop()
 end
