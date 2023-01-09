@@ -676,14 +676,6 @@ local game_over_menu = {}
 
 function love.load()
     math.randomseed(os.time())
-    sounds.bee_buzz = love.audio.newSource("bee_buzz.wav", "static")
-    sounds.bee_buzz:setVolume(0.3)
-
-    sounds.gob = love.audio.newSource("gob.wav", "static")
-    sounds.gob:setVolume(0.3)
-
-    sounds.demon = love.audio.newSource("demon.wav", "static")
-    sounds.demon:setVolume(0.3)
 
     sounds.croak = love.audio.newSource("croak.wav", "static")
     sounds.croak:setVolume(0.2)
@@ -693,7 +685,6 @@ function love.load()
 
     sounds.small_swosh = love.audio.newSource("small_swosh.wav", "static")
     sounds.small_swosh:setVolume(0.15)
-
     sounds.smaller_swosh = love.audio.newSource("small_swosh.wav", "static")
     sounds.smaller_swosh:setVolume(0.10)
 
