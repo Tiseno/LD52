@@ -813,7 +813,6 @@ function love.load()
             end
         )
     )
-    print("Loaded")
 end
 
 local function updateMain(dt)
