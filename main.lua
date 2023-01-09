@@ -813,7 +813,7 @@ local function updateBird(bird, dt)
         elseif bird.state.on_ground then
             sounds.small_swosh:play()
             bird.body:applyLinearImpulse(-RUN_X_IMPULSE, -RUN_Y_IMPULSE)
-            bird.state.expended_calories = bird.state.expended_calories - 0.01
+            bird.state.expended_calories = bird.state.expended_calories - ((RUN_X_IMPULSE + RUN_Y_IMPULSE) / 100)
             bird.state.on_ground = false
         end
 
@@ -828,17 +828,19 @@ local function updateBird(bird, dt)
         sounds.small_swosh:play()
         if bird.state.flapping then
             bird.body:applyLinearImpulse(0, -JUMP_Y_IMPULSE)
+            bird.state.expended_calories = bird.state.expended_calories - (JUMP_Y_IMPULSE / 100)
         elseif bird.state.facing_left then
             bird.body:applyLinearImpulse(-JUMP_X_IMPULSE, -JUMP_Y_IMPULSE)
+            bird.state.expended_calories = bird.state.expended_calories - ((JUMP_Y_IMPULSE + JUMP_X_IMPULSE) / 100)
         else
             bird.body:applyLinearImpulse(JUMP_X_IMPULSE, -JUMP_Y_IMPULSE)
+            bird.state.expended_calories = bird.state.expended_calories - ((JUMP_Y_IMPULSE + JUMP_X_IMPULSE) / 100)
         end
-        bird.state.expended_calories = bird.state.expended_calories - 0.1
         bird.state.on_ground = false
     end
 
     if not bird.state.dead then
-        if bird.state.controls.up then
+        if up then
             if bird.state.controls.rise then
                 bird.state.expended_calories = bird.state.expended_calories - (dt * 2)
             elseif bird.state.controls.down then
@@ -861,22 +863,21 @@ end
 
 local function updateBirdControlsFromPlayerInput(bird)
     if bird.state.dead then
-        bird.state.controls.up = false
         bird.state.controls.left = false
         bird.state.controls.down = false
         bird.state.controls.right = false
+
+        bird.state.controls.up = false
         bird.state.controls.rise = false
     else
-        -- bird.state.controls.up = love.keyboard.isDown("space") or love.keyboard.isDown("lshift")
-        -- bird.state.controls.rise = love.keyboard.isDown("w") or love.keyboard.isDown("k")
         bird.state.controls.left = love.keyboard.isDown("a") or love.keyboard.isDown("h")
         bird.state.controls.down =
             love.keyboard.isDown("s") or love.keyboard.isDown("j") or love.keyboard.isDown("lctrl") or
             love.keyboard.isDown("rctrl")
         bird.state.controls.right = love.keyboard.isDown("d") or love.keyboard.isDown("l")
 
-        bird.state.controls.up = love.keyboard.isDown("w") or love.keyboard.isDown("k")
-        bird.state.controls.rise = love.keyboard.isDown("space") or love.keyboard.isDown("lshift")
+        bird.state.controls.up = love.keyboard.isDown("space") or love.keyboard.isDown("lshift")
+        bird.state.controls.rise = love.keyboard.isDown("w") or love.keyboard.isDown("k")
     end
 end
 
