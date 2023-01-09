@@ -6,7 +6,7 @@ local GAME_RUNNING = "GAME_RUNNING"
 local GAME_PAUSED = "GAME_PAUSED"
 local GAME_OVER = "GAME_OVER"
 
-local STATE = GAME_INIT
+local STATE = MAIN_MENU
 
 -- https://colorpicker.me
 local function rgb(r, g, b)
@@ -107,6 +107,9 @@ local CATEGORY_BIRD = 3
 local CATEGORY_KERNEL = 4
 local CATEGORY_FROG = 5
 local CATEGORY_TONGUE = 6
+
+local NEST_X = -270
+local NEST_Y = -516
 
 local DEFAULT_BIRD_MASS = 0.03
 local DEFAULT_INERTIA = 1000000000000000
@@ -238,7 +241,6 @@ end
 local function turnAllFrogsEvil()
     for _, frog in ipairs(Objects.frogs) do
         if not frog.evil then
-            print("Turning evil")
             frog.evil = true
             frog.croak()
         end
@@ -248,7 +250,6 @@ end
 local function turnAllFrogsInsane()
     for _, frog in ipairs(Objects.frogs) do
         if not frog.insane then
-            print("Turning insane")
             frog.insane = true
         end
     end
@@ -257,7 +258,6 @@ end
 local function activateAllFrogs()
     for _, frog in ipairs(Objects.frogs) do
         if not frog.active then
-            print("Turning active")
             frog.active = true
         end
     end
@@ -269,6 +269,7 @@ local function createTongueSegment(x, y, size)
     object.shape = love.physics.newCircleShape(size)
     object.fixture = love.physics.newFixture(object.body, object.shape)
     object.body:setMass(size * 0.0003)
+    object.fixture:setFriction(1) -- tongues are sticky
     object.fixture:setCategory(CATEGORY_TONGUE)
     object.fixture:setMask(CATEGORY_FROG, CATEGORY_TONGUE)
     object.radius = size
@@ -280,7 +281,6 @@ local function createTongue(x, y, dx, dy, size, n)
         Objects.tongues = {}
     end
 
-    print("Created tongue at", x, y)
     local first = createTongueSegment(x, y, size)
     table.insert(Objects.tongues, first)
 
@@ -308,39 +308,6 @@ function love.keypressed(key, scancode, isrepeat)
         end
     end
 
-    -- TODO remove all these
-    if key == "1" then
-        createTongue(0, -400, 0, 0, 10, 10)
-    end
-
-    if key == "2" then
-        ToggleProps = not ToggleProps
-    end
-
-    if key == "3" then
-        turnAllFrogsInsane()
-    end
-
-    if key == "4" then
-        turnAllFrogsEvil()
-    end
-
-    if key == "5" then
-        killBird(MANGLED_BY_TRACTOR)
-    end
-
-    if key == "6" then
-        killBird(STARVED_TO_DEATH)
-    end
-
-    if key == "7" then
-        killBird(FELL_FROM_HIGH_PLACE)
-    end
-
-    if key == "8" then
-        killBird(EATEN_BY_FROG)
-    end
-
     if key == "9" then
         max_stalk_bend = max_stalk_bend * 1.1
         stalk_bend_speed = stalk_bend_speed * 1.1
@@ -349,10 +316,6 @@ function love.keypressed(key, scancode, isrepeat)
     if key == "0" then
         max_stalk_bend = DEFAULT_MAX_STALK_BEND
         stalk_bend_speed = DEFAULT_STALK_BEND_SPEED
-    end
-
-    if key == "unknown" then
-        love.event.quit()
     end
 end
 
@@ -396,8 +359,8 @@ local function updateWheat(wheat, disco)
     local s = wheat.skeleton
     while true do
         s.angle = max_stalk_bend * math.sin(wheat.seed + CyclicTime * stalk_bend_speed)
-        local MUTATION_MIN = -0.05
-        local MUTATION_MAX = 0.05
+        local MUTATION_MIN = -0.01
+        local MUTATION_MAX = 0.01
         if disco then
             s.color = mutate_color_range(s.color, MUTATION_MIN, MUTATION_MAX)
         end
@@ -597,8 +560,8 @@ local function createFrog(x, y, scale)
 end
 
 local function leaveKernelsInNest()
-    -- sounds.collision:play() -- TODO
     if Objects.bird.state.carrying > 0 then
+        sounds.tick:play()
         Objects.bird.state.calories = Objects.bird.state.calories + KERNEL_CALORIE_WORTH
         Score.collected = Score.collected + Objects.bird.state.carrying
         Objects.bird.state.carrying = 0
@@ -631,10 +594,8 @@ local function initGameWorld()
 
     World = love.physics.newWorld(0, 981, true)
 
-    local nestx = -270
-    local nesty = -516
-    createNest(nestx, nesty)
-    createBird(nestx, nesty - 10)
+    createNest(NEST_X, NEST_Y)
+    createBird(NEST_X, NEST_Y - 10)
 
     createWorldBounds()
 
@@ -661,7 +622,6 @@ local function initGameWorld()
 
         if bCat == CATEGORY_BIRD and a == Objects.nest_surface.fixture then
             Objects.bird.state.in_nest = true
-            print("Landed on nest surface")
             leaveKernelsInNest()
         end
 
@@ -700,7 +660,6 @@ local function initGameWorld()
 
         if bCat == CATEGORY_BIRD and a == Objects.nest_surface.fixture then
             Objects.bird.state.in_nest = false
-            print("Left nest surface")
         end
     end
 
@@ -727,7 +686,7 @@ function love.load()
     sounds.demon:setVolume(0.3)
 
     sounds.croak = love.audio.newSource("croak.wav", "static")
-    sounds.croak:setVolume(0.3)
+    sounds.croak:setVolume(0.2)
 
     sounds.tick = love.audio.newSource("tick.wav", "static")
     sounds.tick:setVolume(5)
@@ -744,6 +703,7 @@ function love.load()
     addWheat(MainMenuProps, darken_color(WHEAT_COLOR), 0)
     addWheat(MainMenuProps, WHEAT_COLOR, 0.1)
 
+    FontMiniP = love.graphics.newFont(13)
     FontMini = love.graphics.newFont(12)
     FontSmall = love.graphics.newFont(24)
     FontLarge = love.graphics.newFont(32)
@@ -1051,10 +1011,14 @@ end
 
 local function frogAttackAndCooldown(frog, dt, cd, interval)
     if not frog.attacking and frog.attack_cooldown > cd and math.random() * interval < frog.attack_cooldown then
-        -- TODO apply impulse to alla tongue segments in direction of bird
+        local bx, by = Objects.bird.body:getPosition()
         local c = frog.tongue
         while c ~= nil do
-            c.body:applyLinearImpulse(c.body:getMass() * 1000, -c.body:getMass() * 1000)
+            local cx, cy = c.body:getPosition()
+            local distance = math.sqrt((bx - cx) * (bx - cx) + (by - cy) * (by - cy))
+            local directionx = (bx - cx) / distance
+            local directiony = (by - cy) / distance
+            c.body:applyLinearImpulse(c.body:getMass() * 1000 * directionx, c.body:getMass() * 1000 * directiony)
             c = c.next
         end
 
@@ -1065,12 +1029,18 @@ local function frogAttackAndCooldown(frog, dt, cd, interval)
         local c = frog.tongue
         while c ~= nil do
             local cx, cy = c.body:getPosition()
-            local frogx, frogy = frog.body:getPosition()
-            local squareDistance = (cx - frogx) * (cx - frogx) + (cy - frogy) * (cy - frogx)
+            local fx, fy = frog.body:getPosition()
+            local squareDistance = (fx - cx) * (fx - cx) + (fy - cy) * (fy - cy)
             local cOutsideBody = squareDistance > (frog.base_width * frog.base_width / 2)
 
             if cOutsideBody then
-                c.body:applyForce(-c.body:getMass() * 100000 * dt, c.body:getMass() * 100000 * dt)
+                local distance = math.sqrt(squareDistance)
+                local directionx = (fx - cx) / distance
+                local directiony = (fy - cy) / distance
+                c.body:applyForce(
+                    c.body:getMass() * 10000 * directionx * dt,
+                    c.body:getMass() * 10000 * directiony * dt
+                )
             end
             c = c.next
         end
@@ -1113,11 +1083,10 @@ local function updateFrog(frog, dt)
         end
         if frog.insane then
             frogAttackAndCooldown(frog, dt, FROG_INSANE_ATTACK_COOLDOWN, FROG_INSANE_ATTACK_INTERVAL)
-        elseif frog.evil then
-            -- TODO only attack and count cooldown when bird is in range and alive
+        elseif frog.evil and not Objects.bird.state.dead then
             local birdx, birdy = Objects.bird.body:getPosition()
             local frogx, frogy = frog.body:getPosition()
-            local squareDistance = (birdx - frogx) * (birdx - frogx) + (birdy - frogy) * (birdy - frogx)
+            local squareDistance = (birdx - frogx) * (birdx - frogx) + (birdy - frogy) * (birdy - frogy)
             local birdInRange = squareDistance < (frog.base_width * frog.base_width)
 
             if birdInRange and not Objects.bird.dead then
@@ -1128,34 +1097,46 @@ local function updateFrog(frog, dt)
 end
 
 local function createFrogAtGround(x)
-    return createFrog(x, 10, 0.6 + 0.2 * math.random())
+    return createFrog(x, 10, 1 + 0.2 * math.random())
 end
 
-local function createActiveSmallFrogInAir()
-    local x = -500 + math.random() * 1000
+local function createFrogInAir(size)
+    local left = -900
+    local right = 900
+    local SAFE_AREA_WIDTH = 220
+    local left_side = left - (NEST_X - SAFE_AREA_WIDTH)
+    local right_side = right - (NEST_X + SAFE_AREA_WIDTH)
+
+    local r = rand(left_side, right_side)
+
+    local x = 0
+    if r < 0 then
+        x = NEST_X - SAFE_AREA_WIDTH + r
+    else
+        x = NEST_X + SAFE_AREA_WIDTH + r
+    end
+
+    -- local x = -500 + math.random() * 1000
     local y = -1000
-    local frog = createFrog(x, y, 0.4 + 0.2 * math.random())
+    local frog = createFrog(x, y, size)
     frog.evil = true
     frog.insane = true
     frog.active = true
     return frog
 end
 
-local function createActiveBigFrogInAir()
-    local x = -500 + math.random() * 1000
-    local y = -1000
-    local frog = createFrog(x, y, 2 + 0.2 * math.random())
-    frog.evil = true
-    frog.insane = true
-    frog.active = true
-    return frog
+local function createSmallFrogInAir()
+    return createFrogInAir(0.4 + 0.2 * math.random())
+end
+
+local function createBigFrogInAir()
+    return createFrogInAir(1.5 + 0.2 * math.random())
 end
 
 local function updateGame(dt)
     World:update(dt)
 
-    local EVENT_INTERVAL = 50 -- TODO
-    local WHEAT_DISCO_START = EVENT_INTERVAL * 5.5
+    local EVENT_INTERVAL = 50
 
     if Score.collected >= EVENT_INTERVAL and #Objects.frogs <= 0 then
         table.insert(Objects.frogs, createFrogAtGround(450 + math.random() * 100))
@@ -1165,38 +1146,41 @@ local function updateGame(dt)
         table.insert(Objects.frogs, createFrogAtGround(-450 - math.random() * 100))
     end
 
-    if Score.collected >= EVENT_INTERVAL * 3 then
-        turnAllFrogsEvil()
+    if Score.collected >= EVENT_INTERVAL * 3 and #Objects.frogs <= 2 then
+        table.insert(Objects.frogs, createFrogAtGround(-50 + math.random() * 100))
     end
 
     if Score.collected >= EVENT_INTERVAL * 3.5 then
+        activateAllFrogs()
+        turnAllFrogsEvil()
         turnAllFrogsInsane()
     end
 
-    if Score.collected >= EVENT_INTERVAL * 4 then
-        activateAllFrogs()
+    local WHEAT_DISCO_START = EVENT_INTERVAL * 4.5
+
+    if Score.collected >= EVENT_INTERVAL * 4.5 and #Objects.frogs <= 8 then
+        table.insert(Objects.frogs, createSmallFrogInAir())
     end
 
-    -- TODO
-    -- if Score.collected >= EVENT_INTERVAL * 4.5 and #Objects.frogs <= 8 then
-    --     table.insert(Objects.frogs, createActiveSmallFrogInAir())
-    -- end
-    --
-    -- if Score.collected >= EVENT_INTERVAL * 5 and #Objects.frogs <= 9 then
-    --     table.insert(Objects.frogs, createActiveBigFrogInAir())
-    -- end
-    --
-    -- if Score.collected >= EVENT_INTERVAL * 5.5 and #Objects.frogs <= 16 then
-    --     table.insert(Objects.frogs, createActiveSmallFrogInAir())
-    -- end
-    --
-    -- if Score.collected >= EVENT_INTERVAL * 5 and #Objects.frogs <= 18 then
-    --     table.insert(Objects.frogs, createActiveBigFrogInAir())
-    -- end
-    --
-    -- if Score.collected >= EVENT_INTERVAL * 5.5 and #Objects.frogs <= 25 then
-    --     table.insert(Objects.frogs, createActiveSmallFrogInAir())
-    -- end
+    if Score.collected >= EVENT_INTERVAL * 5 and #Objects.frogs <= 9 then
+        table.insert(Objects.frogs, createBigFrogInAir())
+    end
+
+    if Score.collected >= EVENT_INTERVAL * 5.5 and #Objects.frogs <= 16 then
+        table.insert(Objects.frogs, createSmallFrogInAir())
+    end
+
+    if Score.collected >= EVENT_INTERVAL * 6 and #Objects.frogs <= 17 then
+        table.insert(Objects.frogs, createBigFrogInAir())
+    end
+
+    if Score.collected >= EVENT_INTERVAL * 6.5 and #Objects.frogs <= 20 then
+        table.insert(Objects.frogs, createSmallFrogInAir())
+    end
+
+    if Score.collected >= EVENT_INTERVAL * 7 and #Objects.frogs <= 25 then
+        table.insert(Objects.frogs, createSmallFrogInAir())
+    end
 
     if Objects.kernels == nil then
         Objects.kernels = {}
@@ -1333,17 +1317,6 @@ end
 local function drawBird(bird, x, y)
     love.graphics.push()
     love.graphics.translate(x, y)
-
-    if not bird.dead and bird.carrying > 0 then
-        if bird.carrying > BIRD_CARRY_PENALTY_MAX then
-            love.graphics.setColor(unpack(RED))
-        elseif bird.carrying > BIRD_CARRY_PENALTY_START then
-            love.graphics.setColor(unpack(ORANGE))
-        else
-            love.graphics.setColor(unpack(WHEAT_COLOR))
-        end
-        love.graphics.printf(string.format("%i", bird.carrying), FontMini, -25, -25, 50, "center")
-    end
 
     if bird.facing_left then
         love.graphics.scale(-1, 1)
@@ -1583,13 +1556,36 @@ local function drawObjects()
     love.graphics.pop()
 end
 
+local function drawBirdCarryText()
+    local window_width = love.graphics.getWidth()
+    local window_height = love.graphics.getHeight()
+    local x, y = Objects.bird.body:getPosition()
+    local bird = Objects.bird.state
+
+    love.graphics.push()
+    love.graphics.translate(math.floor(window_width / 2), window_height)
+    love.graphics.translate(math.floor(x), math.floor(y))
+
+    if not bird.dead and bird.carrying > 0 then
+        love.graphics.setColor(unpack(BLACK))
+        love.graphics.printf(string.format("%i", bird.carrying), FontMiniP, -25, -25, 50, "center")
+        if bird.carrying > BIRD_CARRY_PENALTY_MAX then
+            love.graphics.setColor(unpack(RED))
+        elseif bird.carrying > BIRD_CARRY_PENALTY_START then
+            love.graphics.setColor(unpack(ORANGE))
+        else
+            love.graphics.setColor(unpack(WHEAT_COLOR))
+        end
+        love.graphics.printf(string.format("%i", bird.carrying), FontMini, -25, -25, 50, "center")
+    end
+    love.graphics.pop()
+end
+
 local function drawGameWorld()
     drawProps(BackgroundProps)
     drawObjects()
-    -- TODO remove
-    if ToggleProps then
-        drawProps(Props)
-    end
+    drawProps(Props)
+    drawBirdCarryText()
 end
 
 local function drawWindowTint()

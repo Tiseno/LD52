@@ -1,6 +1,11 @@
 # Ludum Dare 52: Harvest
 
-![](./screenshot.png)
+![](./screenshot2.png)
+
+### 0.3.0
+* Events
+* Frogs
+* Tongues
 
 ### 0.2.0
 * Flying mechanics
