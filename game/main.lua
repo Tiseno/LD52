@@ -319,9 +319,9 @@ function love.keypressed(key, scancode, isrepeat)
         local w, h = love.window.getMode()
         vsync = not vsync
         if vsync then
-            love.window.setMode(w, h, { vsync = 1})
+            love.window.setMode(w, h, {vsync = 1})
         else
-            love.window.setMode(w, h, { vsync = 0})
+            love.window.setMode(w, h, {vsync = 0})
         end
     end
 
@@ -876,10 +876,10 @@ local function updateBird(bird, dt)
     local right = bird.state.controls.right
     local rise = bird.state.controls.rise
 
-    local FLY_Y_FORCE = 5400 * 2
-    local FLY_X_FORCE = 2100 * 2
+    local FLY_Y_FORCE = 5400
+    local FLY_X_FORCE = 2100
 
-    local FLY_X_INERTIA = 600 * 2
+    local FLY_X_INERTIA = 600
 
     local JUMP_Y_IMPULSE = 10
     local JUMP_X_IMPULSE = 4
