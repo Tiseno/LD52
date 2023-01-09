@@ -1,3 +1,6 @@
+dist/32
+dist/64
+
 # Compiled Lua sources
 luac.out
 
