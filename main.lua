@@ -79,7 +79,7 @@ CyclicTime = 0
 TimeAlive = 0
 TimeSpentInNest = 0
 KernelTimer = 0
-KERNEL_TIMER_COOLDOWN = 0.2 -- 2 -- TODO
+KERNEL_TIMER_COOLDOWN = 0.1
 
 local DEFAULT_MAX_STALK_BEND = 0.05
 local DEFAULT_STALK_BEND_SPEED = 1
@@ -109,6 +109,12 @@ local CATEGORY_FROG = 5
 local DEFAULT_BIRD_MASS = 0.03
 local DEFAULT_BIRD_INERTIA = 1000000000000000
 local DEFAULT_KERNEL_MASS = 0.001
+
+local BIRD_CARRY_PENALTY_START = 40
+local BIRD_CARRY_PENALTY_MAX = 50
+
+local BIRD_CARRY_PENALTY_DOUBLE_START = 50
+local BIRD_CARRY_PENALTY_DOUBLE_MAX = 60
 
 local SHOW_CALORIES_THRESHHOLD = 50
 local SHOW_CALORIES_WARNING_THRESHHOLD = 40
@@ -877,6 +883,15 @@ local function updateBird(bird, dt)
 
     if not bird.state.dead then
         if up then
+            local carryPenalty =
+                math.max(0, bird.state.carrying - BIRD_CARRY_PENALTY_START) /
+                (BIRD_CARRY_PENALTY_MAX - BIRD_CARRY_PENALTY_START)
+
+            local doubleCarryPenalty =
+                math.max(0, bird.state.carrying - BIRD_CARRY_PENALTY_DOUBLE_START) /
+                (BIRD_CARRY_PENALTY_DOUBLE_MAX - BIRD_CARRY_PENALTY_DOUBLE_START)
+
+            bird.state.expended_calories = bird.state.expended_calories - dt * carryPenalty - dt * doubleCarryPenalty
             if bird.state.controls.rise then
                 bird.state.expended_calories = bird.state.expended_calories - (dt * 2)
             elseif bird.state.controls.down then
@@ -891,6 +906,7 @@ local function updateBird(bird, dt)
         else
             bird.state.expended_calories = bird.state.expended_calories - (dt / 2)
         end
+
         if (bird.state.calories + bird.state.expended_calories) < 0 then
             killBird(STARVED_TO_DEATH)
         end
@@ -1129,9 +1145,9 @@ local function drawBird(bird, x, y)
     love.graphics.translate(x, y)
 
     if not bird.dead and bird.carrying > 0 then
-        if bird.carrying > 50 then
+        if bird.carrying > BIRD_CARRY_PENALTY_MAX then
             love.graphics.setColor(unpack(RED))
-        elseif bird.carrying > 40 then
+        elseif bird.carrying > BIRD_CARRY_PENALTY_START then
             love.graphics.setColor(unpack(ORANGE))
         else
             love.graphics.setColor(unpack(WHEAT_COLOR))
