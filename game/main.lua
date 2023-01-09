@@ -875,10 +875,10 @@ local function updateBird(bird, dt)
     local right = bird.state.controls.right
     local rise = bird.state.controls.rise
 
-    local FLY_Y_FORCE = 5400
-    local FLY_X_FORCE = 2100
+    local FLY_Y_FORCE = 5400 * 2
+    local FLY_X_FORCE = 2100 * 2
 
-    local FLY_X_INERTIA = 600
+    local FLY_X_INERTIA = 600 * 2
 
     local JUMP_Y_IMPULSE = 10
     local JUMP_X_IMPULSE = 4
