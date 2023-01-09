@@ -174,7 +174,6 @@ local function random_falling_terms()
         "apparently forgot how to fly",
         "failed the bird exam",
         "fell from a high place and died",
-        "got a wing cramp",
         "hit the ground too hard",
         "malfunctioned mid air"
     }
