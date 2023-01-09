@@ -496,10 +496,10 @@ local function createWorldBounds()
     Objects.left_wall = createStatic((1920 / 2) + 100, 0, 40, 5000)
 end
 
-local function createBird()
+local function createBird(x, y)
     local bird_size = 10
     Objects.bird = {}
-    Objects.bird.body = love.physics.newBody(World, -275, -516, "dynamic")
+    Objects.bird.body = love.physics.newBody(World, x, y - (bird_size / 2), "dynamic")
     Objects.bird.shape = love.physics.newCircleShape(bird_size)
     Objects.bird.fixture = love.physics.newFixture(Objects.bird.body, Objects.bird.shape)
     Objects.bird.fixture:setFriction(0.2)
@@ -623,9 +623,12 @@ local function initGameWorld()
 
     World = love.physics.newWorld(0, 981, true)
 
-    createNest(-270, -500)
+    local nestx = -270
+    local nesty = -516
+    createNest(nestx, nesty)
+    createBird(nestx, nesty - 10)
+
     createWorldBounds()
-    createBird()
 
     Objects.frogs = {}
 
@@ -1035,7 +1038,6 @@ local function frogAttackAndCooldown(frog, dt, cd, interval)
     elseif not frog.attacking then
         local c = frog.tongue
         while c ~= nil do
-
             local cx, cy = c.body:getPosition()
             local frogx, frogy = frog.body:getPosition()
             local squareDistance = (cx - frogx) * (cx - frogx) + (cy - frogy) * (cy - frogx)
@@ -1126,7 +1128,7 @@ end
 local function updateGame(dt)
     World:update(dt)
 
-    local EVENT_INTERVAL = 0 -- TODO
+    local EVENT_INTERVAL = 50 -- TODO
     local WHEAT_DISCO_START = EVENT_INTERVAL * 5.5
 
     if Score.collected >= EVENT_INTERVAL and #Objects.frogs <= 0 then
