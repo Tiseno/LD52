@@ -134,15 +134,20 @@ local FROG_ATTACK_ANIMATION_TIME = 0.5
 
 local function random_frog_verb()
     local reasons = {
-        "assassinated",
+        -- "smacked",
+        --"assassinated",
+        -- "whipped",
         "consumed",
+        "crushed",
+        "destroyed",
         "devoured",
         "eaten",
         "killed",
+        "licked",
+        "mangled",
+        "owned",
         "sent to the shadow realm",
-        "smacked",
-        "wasted",
-        "whipped"
+        "wasted"
     }
     return reasons[1 + math.floor(math.random() * #reasons)]
 end
@@ -163,12 +168,12 @@ end
 
 local function random_falling_terms()
     local reasons = {
-        "fell from a high place and died",
-        "hit the ground too hard",
         "apparently forgot how to fly",
         "failed the bird exam",
-        "malfunctioned mid air",
-        "got a wing cramp"
+        "fell from a high place and died",
+        "got a wing cramp",
+        "hit the ground too hard",
+        "malfunctioned mid air"
     }
     return reasons[1 + math.floor(math.random() * #reasons)]
 end
@@ -259,7 +264,7 @@ local function activateAllFrogs()
 end
 
 local function createTongueSegment(x, y, size)
-    object = {}
+    local object = {}
     object.body = love.physics.newBody(World, x, y, "dynamic")
     object.shape = love.physics.newCircleShape(size)
     object.fixture = love.physics.newFixture(object.body, object.shape)
@@ -514,7 +519,10 @@ local function createBird(x, y)
         controls = {up = false, down = false, left = false, right = false, rise = false},
         carrying = 0,
         calories = 55,
-        expended_calories = 0
+        expended_calories = 0,
+        sticky_stuff = {},
+        is_stuck = false,
+        stuck_timer = 0
     }
 end
 
@@ -636,7 +644,6 @@ local function initGameWorld()
         local aCat = a:getCategory()
         local bCat = b:getCategory()
         if (aCat == CATEGORY_STATIC or aCat == CATEGORY_FROG) and bCat == CATEGORY_BIRD then
-            print("Bird on ground!")
             Objects.bird.state.on_ground = true
             local vx, vy = Objects.bird.body:getLinearVelocity()
             if math.abs(vy) > 850 then
@@ -659,8 +666,6 @@ local function initGameWorld()
         end
 
         if aCat == CATEGORY_KERNEL and bCat == CATEGORY_BIRD then
-            print("Picking up a kernel")
-
             local picked_kernel_index = nil
             local picked_kernel = nil
             for i, kernel in ipairs(Objects.kernels) do
@@ -676,13 +681,20 @@ local function initGameWorld()
                 table.remove(Objects.kernels, picked_kernel_index)
             end
         end
+
+        if aCat == CATEGORY_BIRD and bCat == CATEGORY_TONGUE then
+            for i, tongueSegment in ipairs(Objects.tongues) do
+                if tongueSegment.fixture == b then
+                    table.insert(Objects.bird.state.sticky_stuff, tongueSegment)
+                end
+            end
+        end
     end
 
     local function endContact(a, b, coll)
         local aCat = a:getCategory()
         local bCat = b:getCategory()
         if aCat == CATEGORY_STATIC and bCat == CATEGORY_BIRD then
-            print("Bird take off!")
             Objects.bird.state.on_ground = false
         end
 
@@ -862,6 +874,22 @@ local function updateMain(dt)
 end
 
 local function updateBird(bird, dt)
+    if bird.state.is_stuck then
+        bird.state.stuck_timer = bird.state.stuck_timer + dt
+    end
+    if not bird.state.dead and bird.state.stuck_timer > 2 then
+        killBird(EATEN_BY_FROG)
+    end
+
+    local bx, by = bird.body:getPosition()
+    for _, tongue in ipairs(bird.state.sticky_stuff) do
+        bird.state.is_stuck = true
+        local tx, ty = tongue.body:getPosition()
+        local dist = math.sqrt((tx - bx) * (tx - bx) - (ty - by) * (ty - by))
+        love.physics.newRopeJoint(tongue.body, bird.body, tx, ty, bx, by, dist, false)
+    end
+    bird.state.sticky_stuff = {}
+
     if bird.should_reset_mass then
         bird.body:setMass(DEFAULT_BIRD_MASS)
         bird.should_reset_mass = false
@@ -1023,8 +1051,6 @@ end
 
 local function frogAttackAndCooldown(frog, dt, cd, interval)
     if not frog.attacking and frog.attack_cooldown > cd and math.random() * interval < frog.attack_cooldown then
-        print("Frog attacked!")
-
         -- TODO apply impulse to alla tongue segments in direction of bird
         local c = frog.tongue
         while c ~= nil do
