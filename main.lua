@@ -106,6 +106,7 @@ local CATEGORY_STATIC = 2
 local CATEGORY_BIRD = 3
 local CATEGORY_KERNEL = 4
 local CATEGORY_FROG = 5
+local CATEGORY_TONGUE = 6
 
 local DEFAULT_BIRD_MASS = 0.03
 local DEFAULT_INERTIA = 1000000000000000
@@ -257,6 +258,42 @@ local function activateAllFrogs()
     end
 end
 
+local function createTongueSegment(x, y, size)
+    object = {}
+    object.body = love.physics.newBody(World, x, y, "dynamic")
+    object.shape = love.physics.newCircleShape(size)
+    object.fixture = love.physics.newFixture(object.body, object.shape)
+    object.body:setMass(size * 0.0003)
+    object.fixture:setCategory(CATEGORY_TONGUE)
+    object.fixture:setMask(CATEGORY_FROG, CATEGORY_TONGUE)
+    object.radius = size
+    return object
+end
+
+local function createTongue(x, y, dx, dy, size, n)
+    if Objects.tongues == nil then
+        Objects.tongues = {}
+    end
+
+    print("Created tongue at", x, y)
+    local first = createTongueSegment(x, y, size)
+    table.insert(Objects.tongues, first)
+
+    local c = first
+    local cx, cy = x, y
+    for i = 1, n, 1 do
+        local nx, ny = cx + dx, cy + dy
+        local n = createTongueSegment(nx, ny, size)
+        c.next = n
+        table.insert(Objects.tongues, n)
+        love.physics.newRopeJoint(c.body, n.body, cx, cy, nx, ny, size, false)
+        c = n
+        cx, cy = nx, ny
+    end
+
+    return first
+end
+
 function love.keypressed(key, scancode, isrepeat)
     if key == "escape" or key == "p" or key == "pause" or key == "f10" then
         if STATE == GAME_RUNNING then
@@ -267,6 +304,10 @@ function love.keypressed(key, scancode, isrepeat)
     end
 
     -- TODO remove all these
+    if key == "1" then
+        createTongue(0, -400, 0, 0, 10, 10)
+    end
+
     if key == "2" then
         ToggleProps = not ToggleProps
     end
@@ -540,6 +581,9 @@ local function createFrog(x, y, scale)
 
     local calculatedMass = object.body:getMass()
     object.body:setMassData(0, 0, calculatedMass, DEFAULT_INERTIA)
+
+    object.tongue = createTongue(x, y - object.base_height, 0, 0, (8) * scale, 8 + math.floor(math.random() * 20))
+    love.physics.newWeldJoint(object.body, object.tongue.body, x, y - object.base_height, false)
 
     return object
 end
@@ -977,9 +1021,32 @@ end
 local function frogAttackAndCooldown(frog, dt, cd, interval)
     if not frog.attacking and frog.attack_cooldown > cd and math.random() * interval < frog.attack_cooldown then
         print("Frog attacked!")
+
+        -- TODO apply impulse to alla tongue segments in direction of bird
+        local c = frog.tongue
+        while c ~= nil do
+            c.body:applyLinearImpulse(c.body:getMass() * 1000, -c.body:getMass() * 1000)
+            c = c.next
+        end
+
         frog.attacking = true
         frog.attacking_timer = 0
         frog.attack_cooldown = 0
+    elseif not frog.attacking then
+        local c = frog.tongue
+        while c ~= nil do
+
+            local cx, cy = c.body:getPosition()
+            local frogx, frogy = frog.body:getPosition()
+            local squareDistance = (cx - frogx) * (cx - frogx) + (cy - frogy) * (cy - frogx)
+            local cOutsideBody = squareDistance > (frog.base_width * frog.base_width / 2)
+
+            if cOutsideBody then
+                c.body:applyForce(-c.body:getMass() * 100000 * dt, c.body:getMass() * 100000 * dt)
+            end
+            c = c.next
+        end
+        frog.attack_cooldown = frog.attack_cooldown + dt
     else
         frog.attack_cooldown = frog.attack_cooldown + dt
     end
@@ -1300,6 +1367,12 @@ local function drawRectMiddleBottom(x, y, width, height)
     love.graphics.rectangle("fill", x - (width / 2), y - height, width, height)
 end
 
+local function drawTongue(tongue)
+    local x, y = tongue.body:getPosition()
+    love.graphics.setColor(unpack(RED))
+    love.graphics.circle("fill", x, y, tongue.radius)
+end
+
 local function drawFrog(frog) --x, y, w, h)
     local x, y = frog.body:getPosition()
     local FROG_DARK_GREEN = rgb(20, 72, 20)
@@ -1312,11 +1385,7 @@ local function drawFrog(frog) --x, y, w, h)
     love.graphics.push()
     love.graphics.translate(x, y) -- + (frog.height / 2))
 
-    if frog.attacking then
-        love.graphics.setColor(unpack(RED)) -- TODO remove
-    else
-        love.graphics.setColor(unpack(FROG_DARKER_GREEN))
-    end
+    love.graphics.setColor(unpack(FROG_DARKER_GREEN))
     drawRectMiddleBottom(0, 0, frog.base_width, frog.base_height)
     drawRectMiddleBottom(0, -frog.base_height, frog.body_width, frog.body_height)
     -- stalks
@@ -1470,6 +1539,12 @@ local function drawObjects()
     end
 
     drawBird(Objects.bird.state, Objects.bird.body:getPosition())
+
+    if Objects.tongues then
+        for _, tongue in ipairs(Objects.tongues) do
+            drawTongue(tongue)
+        end
+    end
 
     if Objects.frogs then
         for _, frog in ipairs(Objects.frogs) do
