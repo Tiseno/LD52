@@ -92,6 +92,7 @@ local CreatedFrogs = 0
 local Score = {collected = 0, time = 0, score = 0, death_reason = nil}
 local BackgroundProps = {}
 local Props = {}
+local ToggleProps = true
 
 local STARVED_TO_DEATH = 0
 local EATEN_BY_FROG = 1
@@ -107,7 +108,7 @@ local CATEGORY_KERNEL = 4
 local CATEGORY_FROG = 5
 
 local DEFAULT_BIRD_MASS = 0.03
-local DEFAULT_BIRD_INERTIA = 1000000000000000
+local DEFAULT_INERTIA = 1000000000000000
 local DEFAULT_KERNEL_MASS = 0.001
 
 local BIRD_CARRY_PENALTY_START = 40
@@ -121,6 +122,10 @@ local SHOW_CALORIES_WARNING_THRESHHOLD = 40
 local SHOW_CALORIES_CRITICAL_THRESHHOLD = 20
 
 local DEFAULT_FRICTION = 0.9
+
+local FROG_ATTACK_INTERVAL = 5
+local FROG_ATTACK_COOLDOWN = 4
+local FROG_ATTACK_ANIMATION_TIME = 0.5
 
 local function random_frog_verb()
     local reasons = {
@@ -220,11 +225,19 @@ local function killBird(source)
     setScore()
 end
 
-local function turnFrogs()
+local function turnFrogsEvil()
     for _, frog in ipairs(Objects.frogs) do
         if not frog.evil then
             frog.evil = true
             frog.croak()
+        end
+    end
+end
+
+local function turnFrogsInsane()
+    for _, frog in ipairs(Objects.frogs) do
+        if not frog.insane then
+            frog.insane = true
         end
     end
 end
@@ -234,8 +247,6 @@ local function activateFrogs()
         frog.active = true
     end
 end
-
-local toggle_props = true
 
 function love.keypressed(key, scancode, isrepeat)
     if key == "escape" or key == "p" or key == "pause" or key == "f10" then
@@ -247,12 +258,16 @@ function love.keypressed(key, scancode, isrepeat)
     end
 
     -- TODO remove all these
+    if key == "2" then
+        ToggleProps = not ToggleProps
+    end
+
     if key == "3" then
-        toggle_props = not toggle_props
+        turnFrogsInsane()
     end
 
     if key == "4" then
-        turnFrogs()
+        turnFrogsEvil()
     end
 
     if key == "5" then
@@ -389,7 +404,7 @@ local function destroyWorld()
     stalk_bend_speed = DEFAULT_STALK_BEND_SPEED
     World = {}
     Objects = {}
-    CreatedFrogs = 0
+    ToggleProps = true
     Score = {collected = 0, time = 0, score = 0, death_reason = nil}
     BackgroundProps = {}
     Props = {}
@@ -441,7 +456,7 @@ local function createBird()
     Objects.bird.fixture = love.physics.newFixture(Objects.bird.body, Objects.bird.shape)
     Objects.bird.fixture:setFriction(0.2)
     Objects.bird.fixture:setCategory(CATEGORY_BIRD)
-    Objects.bird.body:setMassData(0, 0, DEFAULT_BIRD_MASS, DEFAULT_BIRD_INERTIA)
+    Objects.bird.body:setMassData(0, 0, DEFAULT_BIRD_MASS, DEFAULT_INERTIA)
     Objects.bird.state = {
         facing_left = false,
         flapping = false,
@@ -488,8 +503,10 @@ local function createFrog(x, y, scale)
     end
 
     object.evil = false
-
     object.timer = math.random()
+    object.attack_cooldown = math.random() * FROG_ATTACK_COOLDOWN
+    object.attacking = false
+    object.attacking_timer = 0
 
     object.body = love.physics.newBody(World, x, y, "dynamic")
 
@@ -514,7 +531,8 @@ local function createFrog(x, y, scale)
     object.fixture:setFriction(0.2)
     object.fixture:setCategory(CATEGORY_FROG)
 
-    -- object.body:setMassData(0, 0, DEFAULT_BIRD_MASS, DEFAULT_BIRD_INERTIA)
+    local calculatedMass = object.body:getMass()
+    object.body:setMassData(0, 0, calculatedMass, DEFAULT_INERTIA)
 
     return object
 end
@@ -563,12 +581,20 @@ local function initGameWorld()
     local function beginContact(a, b, coll)
         local aCat = a:getCategory()
         local bCat = b:getCategory()
-        if aCat == CATEGORY_STATIC and bCat == CATEGORY_BIRD then
+        if (aCat == CATEGORY_STATIC or aCat == CATEGORY_FROG) and bCat == CATEGORY_BIRD then
             print("Bird on ground!")
             Objects.bird.state.on_ground = true
             local vx, vy = Objects.bird.body:getLinearVelocity()
             if math.abs(vy) > 850 then
                 killBird(FELL_FROM_HIGH_PLACE)
+            end
+        end
+
+        if (aCat == CATEGORY_STATIC or aCat == CATEGORY_KERNEL or aCat == CATEGORY_FROG) and bCat == CATEGORY_FROG then
+            for _, frog in ipairs(Objects.frogs) do
+                if b == frog.fixture then
+                    frog.on_ground = true
+                end
             end
         end
 
@@ -944,34 +970,71 @@ end
 local function updateFrog(frog, dt)
     frog.timer = frog.timer + dt
 
-    -- if frog.timer > 5 then
-    --     frog.evil = true
-    -- end
-    --
-    -- if frog.timer > 10 then
-    --     frog.active = true
-    -- end
-
     local mod = math.random() > 0.5 and 1 or -1
 
     local JUMP_X_FACTOR = 100 * mod
     local JUMP_Y_FACTOR = -400
 
-    if frog.active then
-        -- frog.timer = frog.timer - 1 - math.random() * 2
-        if math.random() < 0.01 then
-            -- if frog.evil then
-            --     sounds.croak:setPitch(0.35)
-            --     sounds.croak:play()
-            -- else
-            -- sounds.croak:setPitch(frog.pitch)
-            -- sounds.croak:play()
-            frog.croak()
-            -- end
-            local mass = frog.body:getMass()
-            frog.body:applyLinearImpulse(mass * JUMP_X_FACTOR, mass * JUMP_Y_FACTOR)
+    if frog.on_ground then
+        if frog.time_on_ground == nil then
+            frog.time_on_ground = 0
+        end
+        frog.time_on_ground = frog.time_on_ground + dt
+    else
+        frog.time_on_ground = 0
+    end
+
+    if frog.attacking then
+        frog.attacking_timer = frog.attacking_timer + dt
+        if frog.attacking_timer > FROG_ATTACK_ANIMATION_TIME then
+            frog.attacking = false
         end
     end
+
+    if frog.active then
+        if frog.on_ground and frog.time_on_ground > 1 and math.random() < 0.01 then
+            frog.croak()
+            local mass = frog.body:getMass()
+            frog.body:applyLinearImpulse(mass * JUMP_X_FACTOR, mass * JUMP_Y_FACTOR)
+            frog.time_on_ground = 0
+        end
+
+        if
+            not frog.attacking and not Objects.bird.dead and frog.attack_cooldown > FROG_ATTACK_COOLDOWN and
+                math.random() * FROG_ATTACK_INTERVAL < frog.attack_cooldown
+         then
+            print("Frog wanted to attack!")
+            frog.attacking = true
+            frog.attacking_timer = 0
+            frog.attack_cooldown = 0
+        else
+            frog.attack_cooldown = frog.attack_cooldown + dt
+        end
+    end
+end
+
+local function createFrogAtGround(x)
+    return createFrog(x, 10, 0.6 + 0.2 * math.random())
+end
+
+local function createActiveSmallFrogInAir()
+    local x = -500 + math.random() * 1000
+    local y = -1000
+    local frog = createFrog(x, y, 0.4 + 0.2 * math.random())
+    frog.evil = true
+    frog.insane = true
+    frog.active = true
+    return frog
+end
+
+local function createActiveBigFrogInAir()
+    local x = -500 + math.random() * 1000
+    local y = -1000
+    local frog = createFrog(x, y, 2 + 0.2 * math.random())
+    frog.evil = true
+    frog.insane = true
+    frog.active = true
+    return frog
 end
 
 local function updateGame(dt)
@@ -979,29 +1042,38 @@ local function updateGame(dt)
 
     local FROG_INTERVAL = 0 -- TODO
     local WILT_START = FROG_INTERVAL * 2.5
-    local WILT_END = FROG_INTERVAL * 3.5
+    local WILT_END = -1 --FROG_INTERVAL * 2.5
 
-    if Score.collected >= FROG_INTERVAL and CreatedFrogs <= 0 then
-        table.insert(Objects.frogs, createFrog(450 + math.random() * 100, 10, 1.2 + 0.2 * math.random()))
-        CreatedFrogs = CreatedFrogs + 1
+    if Score.collected >= FROG_INTERVAL and #Objects.frogs <= 0 then
+        table.insert(Objects.frogs, createFrogAtGround(450 + math.random() * 100))
     end
 
-    if Score.collected >= FROG_INTERVAL * 2 and CreatedFrogs <= 1 then
-        table.insert(Objects.frogs, createFrog(-450 - math.random() * 100, 10, 1.2 + 0.2 * math.random()))
-        CreatedFrogs = CreatedFrogs + 1
+    if Score.collected >= FROG_INTERVAL * 2 and #Objects.frogs <= 1 then
+        table.insert(Objects.frogs, createFrogAtGround(-450 - math.random() * 100))
     end
 
-    if Score.collected >= FROG_INTERVAL * 3 and CreatedFrogs <= 2 then
-        table.insert(Objects.frogs, createFrog(0 - 50 + math.random() * 100, 10, 1.4 + 0.2 * math.random()))
-        CreatedFrogs = CreatedFrogs + 1
+    if Score.collected >= FROG_INTERVAL * 3 and #Objects.frogs <= 2 then
+        table.insert(Objects.frogs, createFrogAtGround(-50 + math.random() * 100))
     end
 
-    if Score.collected > FROG_INTERVAL * 4 then
-        turnFrogs()
+    if Score.collected >= FROG_INTERVAL * 4 then
+        turnFrogsEvil()
     end
 
-    if Score.collected > FROG_INTERVAL * 5 then
+    if Score.collected >= FROG_INTERVAL * 4.5 then
+        turnFrogsInsane()
+    end
+
+    if Score.collected >= FROG_INTERVAL * 5 then
         activateFrogs()
+    end
+
+    if Score.collected >= FROG_INTERVAL * 5.5 and #Objects.frogs <= 10 then
+        table.insert(Objects.frogs, createActiveSmallFrogInAir())
+    end
+
+    if Score.collected >= FROG_INTERVAL * 5.5 and #Objects.frogs <= 11 then
+        table.insert(Objects.frogs, createActiveBigFrogInAir())
     end
 
     if Objects.kernels == nil then
@@ -1217,7 +1289,11 @@ local function drawFrog(frog) --x, y, w, h)
     love.graphics.push()
     love.graphics.translate(x, y) -- + (frog.height / 2))
 
-    love.graphics.setColor(unpack(FROG_DARKER_GREEN))
+    if frog.attacking then
+        love.graphics.setColor(unpack(RED)) -- TODO remove
+    else
+        love.graphics.setColor(unpack(FROG_DARKER_GREEN))
+    end
     drawRectMiddleBottom(0, 0, frog.base_width, frog.base_height)
     drawRectMiddleBottom(0, -frog.base_height, frog.body_width, frog.body_height)
     -- stalks
@@ -1255,7 +1331,14 @@ local function drawFrog(frog) --x, y, w, h)
     )
 
     -- pupils
-    if frog.evil then
+    if frog.insane then
+        local flipper = math.sin(CyclicTime * 100)
+        if flipper > 0 then
+            love.graphics.setColor(unpack(FROG_BRIGHT_PURPLE))
+        else
+            love.graphics.setColor(unpack(RED))
+        end
+    elseif frog.evil then
         love.graphics.setColor(unpack(RED))
     else
         love.graphics.setColor(unpack(FROG_BRIGHT_PURPLE))
@@ -1378,7 +1461,7 @@ local function drawGameWorld()
     drawProps(BackgroundProps)
     drawObjects()
     -- TODO remove
-    if toggle_props then
+    if ToggleProps then
         drawProps(Props)
     end
 end
