@@ -29,7 +29,7 @@ local function highlight_color(color)
     }
 end
 
-local function mutate_color(color, factor)
+local function mutate_color_additive(color, factor)
     return {
         math.min(color[1] + math.random() * factor, 1),
         math.min(color[2] + math.random() * factor, 1),
@@ -37,8 +37,31 @@ local function mutate_color(color, factor)
     }
 end
 
+local function rand(min, max)
+    return min + math.random() * (max - min)
+end
+
+local function mutate_color_range(color, min, max)
+    return {
+        math.min(color[1] + rand(min, max), 1),
+        math.min(color[2] + rand(min, max), 1),
+        math.min(color[3] + rand(min, max), 1)
+    }
+end
+
+local function merge_max_color(color1, color2)
+    return {
+        math.max(color1[1], color2[1]),
+        math.max(color1[2], color2[2]),
+        math.max(color1[3], color2[3])
+    }
+end
+
 -- The color used by the US National Association of Wheat Growers: https://wheatworld.org/wheat-101/wheat-facts/
 local WHEAT_COLOR = rgb(179, 136, 7)
+
+local WHEAT_WILT_COLOR = rgb(179 * 3 / 4, 136 * 3 / 4, 7 * 3 / 4)
+local WHEAT_WILT_COLOR_BACKGROUND = rgb(179 / 3, 136 / 3, 7 / 3)
 
 local LIGHT_BLUE = {0.5, 0.7, 0.9}
 local ORANGE = rgb(255, 128, 61)
@@ -158,7 +181,7 @@ end
 local function format_death_reason_hint(death_reason)
     if death_reason == STARVED_TO_DEATH then
         return string.format(
-            "Every time a bird returns to its nest, it eats some of its harvest.",
+            "Every time a bird returns to its nest, it eats some of its new harvest.",
             KERNEL_CALORIE_WORTH
         )
     elseif death_reason == FELL_FROM_HIGH_PLACE then
@@ -206,7 +229,7 @@ local function activateFrogs()
     end
 end
 
-local toggle_props = false
+local toggle_props = true
 
 function love.keypressed(key, scancode, isrepeat)
     if key == "escape" or key == "p" or key == "pause" or key == "f10" then
@@ -293,35 +316,48 @@ local function newBone(x, y, width, height, angle, color, children)
     }
 end
 
-local function updateWheat(wheat)
+local function updateWheat(wheat, wilt, wiltColor)
     local s = wheat.skeleton
     while true do
         s.angle = max_stalk_bend * math.sin(wheat.seed + CyclicTime * stalk_bend_speed)
+        local MUTATION_MIN = -0.005
+        local MUTATION_MAX = 0.004
+        local MIN_COLOR = wiltColor
+        if wilt then
+            s.color = merge_max_color(MIN_COLOR, mutate_color_range(s.color, MUTATION_MIN, MUTATION_MAX))
+        end
         if #s.children > 1 then
+            if wilt then
+                for _, kernel in ipairs(s.children) do
+                    kernel.color =
+                        merge_max_color(MIN_COLOR, mutate_color_range(kernel.color, MUTATION_MIN, MUTATION_MAX))
+                end
+            end
             break
         end
         s = s.children[1]
     end
+
     return wheat
 end
 
 local function newWheat(x, y, baseColor, mutation)
     local seeds = {}
-    local color = mutate_color(baseColor, mutation)
+    local color = mutate_color_additive(baseColor, mutation)
     local lr = math.random() > 0.5
     for i = 0, 7, 1 do
         local offset1 = lr and 3 or 1
         local offset2 = lr and 1 or 3
         table.insert(
             seeds,
-            newBone(0, i * 6 - offset1, 3, 10, 0.3 + math.random() * 0.2, mutate_color(color, mutation), {})
+            newBone(0, i * 6 - offset1, 3, 10, 0.3 + math.random() * 0.2, mutate_color_additive(color, mutation), {})
         )
         table.insert(
             seeds,
-            newBone(0, i * 6 - offset2, 3, 10, -0.3 - math.random() * 0.2, mutate_color(color, mutation), {})
+            newBone(0, i * 6 - offset2, 3, 10, -0.3 - math.random() * 0.2, mutate_color_additive(color, mutation), {})
         )
     end
-    table.insert(seeds, newBone(0, 7 * 6 + 3, 3, 10, 0, mutate_color(color, mutation), {}))
+    table.insert(seeds, newBone(0, 7 * 6 + 3, 3, 10, 0, mutate_color_additive(color, mutation), {}))
 
     local bend = math.pi * 1 - 0.1 + math.random() * 0.2
     local random_height = math.random() * 30
@@ -331,7 +367,7 @@ local function newWheat(x, y, baseColor, mutation)
 
     local seed = math.random() * math.pi
     local wheat = {type = "wheat", x = x, y = y, skeleton = stalk1, bend = bend, seed = seed}
-    return updateWheat(wheat)
+    return updateWheat(wheat, false)
 end
 
 local function addWheat(list, color, mut)
@@ -363,7 +399,7 @@ local function createKernel()
     object.shape = love.physics.newRectangleShape(3, 8)
     object.fixture = love.physics.newFixture(object.body, object.shape)
     object.fixture:setCategory(CATEGORY_KERNEL)
-    object.color = mutate_color(WHEAT_COLOR, 0.2)
+    object.color = mutate_color_additive(WHEAT_COLOR, 0.2)
     object.body:setMass(DEFAULT_KERNEL_MASS)
     object.body:applyAngularImpulse(300)
     return object
@@ -601,6 +637,9 @@ function love.load()
     sounds.small_swosh = love.audio.newSource("small_swosh.wav", "static")
     sounds.small_swosh:setVolume(0.15)
 
+    sounds.smaller_swosh = love.audio.newSource("small_swosh.wav", "static")
+    sounds.smaller_swosh:setVolume(0.10)
+
     sounds.collision = love.audio.newSource("collision.wav", "static")
     sounds.collision:setVolume(6)
 
@@ -728,15 +767,11 @@ function love.load()
     print("Loaded")
 end
 
-local function updateProp(prop, dt)
-    if prop.type == "wheat" then
-        updateWheat(prop)
-    end
-end
-
 local function updateMain(dt)
     for _, prop in ipairs(MainMenuProps) do
-        updateProp(prop, dt)
+        if prop.type == "wheat" then
+            updateWheat(prop, false)
+        end
     end
 end
 
@@ -774,6 +809,7 @@ local function updateBird(bird, dt)
     local xv, yv = bird.body:getLinearVelocity()
     if up then
         bird.state.flapping = true
+        sounds.smaller_swosh:play()
         if rise then
             if yv > -300 then
                 bird.body:applyForce(0, -FLY_Y_FORCE * dt)
@@ -925,7 +961,9 @@ end
 local function updateGame(dt)
     World:update(dt)
 
-    local FROG_INTERVAL = 40 -- TODO
+    local FROG_INTERVAL = 0 -- TODO
+    local WILT_START = FROG_INTERVAL * 2.5
+    local WILT_END = FROG_INTERVAL * 3.5
 
     if Score.collected >= FROG_INTERVAL and CreatedFrogs <= 0 then
         table.insert(Objects.frogs, createFrog(450 + math.random() * 100, 10, 1.2 + 0.2 * math.random()))
@@ -968,11 +1006,19 @@ local function updateGame(dt)
     end
 
     for _, prop in ipairs(BackgroundProps) do
-        updateProp(prop, dt)
+        if prop.type == "wheat" then
+            updateWheat(
+                prop,
+                Score.collected >= WILT_START and Score.collected <= WILT_END,
+                WHEAT_WILT_COLOR_BACKGROUND
+            )
+        end
     end
 
     for _, prop in ipairs(Props) do
-        updateProp(prop, dt)
+        if prop.type == "wheat" then
+            updateWheat(prop, Score.collected >= WILT_START and Score.collected <= WILT_END, WHEAT_WILT_COLOR)
+        end
     end
 
     if STATE == GAME_RUNNING and Objects.bird.state.dead then
@@ -992,9 +1038,9 @@ function love.update(dt)
     end
 
     CyclicTime = CyclicTime + dt
-    if CyclicTime > (2 * math.pi) then
-        CyclicTime = CyclicTime - (2 * math.pi)
-    end
+    -- if CyclicTime > (2 * math.pi) then
+    --     CyclicTime = CyclicTime - (2 * math.pi)
+    -- end
 
     Time = Time + dt
     TimeAlive = TimeAlive + dt
@@ -1155,7 +1201,7 @@ local function drawFrog(frog) --x, y, w, h)
     love.graphics.push()
     love.graphics.translate(x, y) -- + (frog.height / 2))
 
-    love.graphics.setColor(unpack(FROG_DARK_GREEN))
+    love.graphics.setColor(unpack(FROG_DARKER_GREEN))
     drawRectMiddleBottom(0, 0, frog.base_width, frog.base_height)
     drawRectMiddleBottom(0, -frog.base_height, frog.body_width, frog.body_height)
     -- stalks
@@ -1213,8 +1259,6 @@ local function drawFrog(frog) --x, y, w, h)
         frog.eye_ball_width,
         frog.eye_ball_height / 3
     )
-
-    drawPoint(x, y, 5, RED)
 
     love.graphics.pop()
 end
