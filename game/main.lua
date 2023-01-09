@@ -299,12 +299,29 @@ local function createTongue(x, y, dx, dy, size, n)
     return first
 end
 
+local showFPS = false
+local vsync = false
+
 function love.keypressed(key, scancode, isrepeat)
     if key == "escape" or key == "p" or key == "pause" or key == "f10" then
         if STATE == GAME_RUNNING then
             STATE = GAME_PAUSED
         elseif STATE == GAME_PAUSED then
             STATE = GAME_RUNNING
+        end
+    end
+
+    if key == "t" then
+        showFPS = not showFPS
+    end
+
+    if key == "v" then
+        local w, h = love.window.getMode()
+        vsync = not vsync
+        if vsync then
+            love.window.setMode(w, h, { vsync = 1})
+        else
+            love.window.setMode(w, h, { vsync = 0})
         end
     end
 
@@ -859,10 +876,10 @@ local function updateBird(bird, dt)
     local right = bird.state.controls.right
     local rise = bird.state.controls.rise
 
-    local FLY_Y_FORCE = 5400
-    local FLY_X_FORCE = 2100
+    local FLY_Y_FORCE = 5400 * 2
+    local FLY_X_FORCE = 2100 * 2
 
-    local FLY_X_INERTIA = 600
+    local FLY_X_INERTIA = 600 * 2
 
     local JUMP_Y_IMPULSE = 10
     local JUMP_X_IMPULSE = 4
@@ -1572,6 +1589,10 @@ local function drawBirdCarryText()
 end
 
 local function drawGameWorld()
+    if showFPS then
+        love.graphics.printf(tostring(love.timer.getFPS()), FontSmall, 0, 0, 400, "left")
+    end
+
     drawProps(BackgroundProps)
     drawObjects()
     drawProps(Props)
