@@ -125,6 +125,10 @@ local DEFAULT_FRICTION = 0.9
 
 local FROG_ATTACK_INTERVAL = 5
 local FROG_ATTACK_COOLDOWN = 4
+
+local FROG_INSANE_ATTACK_INTERVAL = 3
+local FROG_INSANE_ATTACK_COOLDOWN = 2
+
 local FROG_ATTACK_ANIMATION_TIME = 0.5
 
 local function random_frog_verb()
@@ -225,26 +229,31 @@ local function killBird(source)
     setScore()
 end
 
-local function turnFrogsEvil()
+local function turnAllFrogsEvil()
     for _, frog in ipairs(Objects.frogs) do
         if not frog.evil then
+            print("Turning evil")
             frog.evil = true
             frog.croak()
         end
     end
 end
 
-local function turnFrogsInsane()
+local function turnAllFrogsInsane()
     for _, frog in ipairs(Objects.frogs) do
         if not frog.insane then
+            print("Turning insane")
             frog.insane = true
         end
     end
 end
 
-local function activateFrogs()
+local function activateAllFrogs()
     for _, frog in ipairs(Objects.frogs) do
-        frog.active = true
+        if not frog.active then
+            print("Turning active")
+            frog.active = true
+        end
     end
 end
 
@@ -263,11 +272,11 @@ function love.keypressed(key, scancode, isrepeat)
     end
 
     if key == "3" then
-        turnFrogsInsane()
+        turnAllFrogsInsane()
     end
 
     if key == "4" then
-        turnFrogsEvil()
+        turnAllFrogsEvil()
     end
 
     if key == "5" then
@@ -337,21 +346,19 @@ local function newBone(x, y, width, height, angle, color, children)
     }
 end
 
-local function updateWheat(wheat, wilt, wiltColor)
+local function updateWheat(wheat, disco)
     local s = wheat.skeleton
     while true do
         s.angle = max_stalk_bend * math.sin(wheat.seed + CyclicTime * stalk_bend_speed)
-        local MUTATION_MIN = -0.005
-        local MUTATION_MAX = 0.004
-        local MIN_COLOR = wiltColor
-        if wilt then
-            s.color = merge_max_color(MIN_COLOR, mutate_color_range(s.color, MUTATION_MIN, MUTATION_MAX))
+        local MUTATION_MIN = -0.05
+        local MUTATION_MAX = 0.05
+        if disco then
+            s.color = mutate_color_range(s.color, MUTATION_MIN, MUTATION_MAX)
         end
         if #s.children > 1 then
-            if wilt then
+            if disco then
                 for _, kernel in ipairs(s.children) do
-                    kernel.color =
-                        merge_max_color(MIN_COLOR, mutate_color_range(kernel.color, MUTATION_MIN, MUTATION_MAX))
+                    kernel.color = mutate_color_range(kernel.color, MUTATION_MIN, MUTATION_MAX)
                 end
             end
             break
@@ -967,6 +974,17 @@ local function updateMenu(menu)
     end
 end
 
+local function frogAttackAndCooldown(frog, dt, cd, interval)
+    if not frog.attacking and frog.attack_cooldown > cd and math.random() * interval < frog.attack_cooldown then
+        print("Frog attacked!")
+        frog.attacking = true
+        frog.attacking_timer = 0
+        frog.attack_cooldown = 0
+    else
+        frog.attack_cooldown = frog.attack_cooldown + dt
+    end
+end
+
 local function updateFrog(frog, dt)
     frog.timer = frog.timer + dt
 
@@ -998,17 +1016,18 @@ local function updateFrog(frog, dt)
             frog.body:applyLinearImpulse(mass * JUMP_X_FACTOR, mass * JUMP_Y_FACTOR)
             frog.time_on_ground = 0
         end
+        if frog.insane then
+            frogAttackAndCooldown(frog, dt, FROG_INSANE_ATTACK_COOLDOWN, FROG_INSANE_ATTACK_INTERVAL)
+        elseif frog.evil then
+            -- TODO only attack and count cooldown when bird is in range and alive
+            local birdx, birdy = Objects.bird.body:getPosition()
+            local frogx, frogy = frog.body:getPosition()
+            local squareDistance = (birdx - frogx) * (birdx - frogx) + (birdy - frogy) * (birdy - frogx)
+            local birdInRange = squareDistance < (frog.base_width * frog.base_width)
 
-        if
-            not frog.attacking and not Objects.bird.dead and frog.attack_cooldown > FROG_ATTACK_COOLDOWN and
-                math.random() * FROG_ATTACK_INTERVAL < frog.attack_cooldown
-         then
-            print("Frog wanted to attack!")
-            frog.attacking = true
-            frog.attacking_timer = 0
-            frog.attack_cooldown = 0
-        else
-            frog.attack_cooldown = frog.attack_cooldown + dt
+            if birdInRange and not Objects.bird.dead then
+                frogAttackAndCooldown(frog, dt, FROG_ATTACK_COOLDOWN, FROG_ATTACK_INTERVAL)
+            end
         end
     end
 end
@@ -1040,41 +1059,49 @@ end
 local function updateGame(dt)
     World:update(dt)
 
-    local FROG_INTERVAL = 0 -- TODO
-    local WILT_START = FROG_INTERVAL * 2.5
-    local WILT_END = -1 --FROG_INTERVAL * 2.5
+    local EVENT_INTERVAL = 0 -- TODO
+    local WHEAT_DISCO_START = EVENT_INTERVAL * 5.5
 
-    if Score.collected >= FROG_INTERVAL and #Objects.frogs <= 0 then
+    if Score.collected >= EVENT_INTERVAL and #Objects.frogs <= 0 then
         table.insert(Objects.frogs, createFrogAtGround(450 + math.random() * 100))
     end
 
-    if Score.collected >= FROG_INTERVAL * 2 and #Objects.frogs <= 1 then
+    if Score.collected >= EVENT_INTERVAL * 2 and #Objects.frogs <= 1 then
         table.insert(Objects.frogs, createFrogAtGround(-450 - math.random() * 100))
     end
 
-    if Score.collected >= FROG_INTERVAL * 3 and #Objects.frogs <= 2 then
-        table.insert(Objects.frogs, createFrogAtGround(-50 + math.random() * 100))
+    if Score.collected >= EVENT_INTERVAL * 3 then
+        turnAllFrogsEvil()
     end
 
-    if Score.collected >= FROG_INTERVAL * 4 then
-        turnFrogsEvil()
+    if Score.collected >= EVENT_INTERVAL * 3.5 then
+        turnAllFrogsInsane()
     end
 
-    if Score.collected >= FROG_INTERVAL * 4.5 then
-        turnFrogsInsane()
+    if Score.collected >= EVENT_INTERVAL * 4 then
+        activateAllFrogs()
     end
 
-    if Score.collected >= FROG_INTERVAL * 5 then
-        activateFrogs()
-    end
-
-    if Score.collected >= FROG_INTERVAL * 5.5 and #Objects.frogs <= 10 then
-        table.insert(Objects.frogs, createActiveSmallFrogInAir())
-    end
-
-    if Score.collected >= FROG_INTERVAL * 5.5 and #Objects.frogs <= 11 then
-        table.insert(Objects.frogs, createActiveBigFrogInAir())
-    end
+    -- TODO
+    -- if Score.collected >= EVENT_INTERVAL * 4.5 and #Objects.frogs <= 8 then
+    --     table.insert(Objects.frogs, createActiveSmallFrogInAir())
+    -- end
+    --
+    -- if Score.collected >= EVENT_INTERVAL * 5 and #Objects.frogs <= 9 then
+    --     table.insert(Objects.frogs, createActiveBigFrogInAir())
+    -- end
+    --
+    -- if Score.collected >= EVENT_INTERVAL * 5.5 and #Objects.frogs <= 16 then
+    --     table.insert(Objects.frogs, createActiveSmallFrogInAir())
+    -- end
+    --
+    -- if Score.collected >= EVENT_INTERVAL * 5 and #Objects.frogs <= 18 then
+    --     table.insert(Objects.frogs, createActiveBigFrogInAir())
+    -- end
+    --
+    -- if Score.collected >= EVENT_INTERVAL * 5.5 and #Objects.frogs <= 25 then
+    --     table.insert(Objects.frogs, createActiveSmallFrogInAir())
+    -- end
 
     if Objects.kernels == nil then
         Objects.kernels = {}
@@ -1095,17 +1122,13 @@ local function updateGame(dt)
 
     for _, prop in ipairs(BackgroundProps) do
         if prop.type == "wheat" then
-            updateWheat(
-                prop,
-                Score.collected >= WILT_START and Score.collected <= WILT_END,
-                WHEAT_WILT_COLOR_BACKGROUND
-            )
+            updateWheat(prop, Score.collected >= WHEAT_DISCO_START)
         end
     end
 
     for _, prop in ipairs(Props) do
         if prop.type == "wheat" then
-            updateWheat(prop, Score.collected >= WILT_START and Score.collected <= WILT_END, WHEAT_WILT_COLOR)
+            updateWheat(prop, Score.collected >= WHEAT_DISCO_START)
         end
     end
 
